@@ -2,242 +2,207 @@
 //  TrainerSearchView.swift
 //  TrainerMatch
 //
-//  Created by Ramone Hayes on 2/10/26.
-//
 
 import SwiftUI
 
 struct TrainerSearchView: View {
-    @State private var city = ""
-    @State private var selectedSpecialty: TrainerSpecialty?
-    @State private var selectedServiceType: ServiceType = .inPerson
-    @State private var selectedGender: String = "Any"
-    @State private var showingResults = false
-    
+    @Environment(\.dismiss) var dismiss
+
+    @State private var city                  = ""
+    @State private var selectedSpecialty:   TrainerSpecialty? = nil
+    @State private var selectedServiceType:  ServiceType      = .inPerson
+    @State private var selectedGender        = "Any"
+    @State private var showingResults        = false
+    @State private var supabaseTrainers:    [TrainerRow] = []
+    @State private var isLoading             = false
+
     var body: some View {
         ZStack {
-            // Background with gold gradient (matching website)
             LinearGradient(
-                colors: [
-                    Color(red: 0.95, green: 0.82, blue: 0.45),
-                    Color(red: 0.92, green: 0.78, blue: 0.38)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
+                colors: [Color.tmGold, Color.tmGoldDark],
+                startPoint: .topLeading, endPoint: .bottomTrailing)
             .ignoresSafeArea()
-            
+
             ScrollView {
                 VStack(spacing: 0) {
-                    Spacer()
-                        .frame(height: 60)
-                    
-                    // Card Container
+                    Spacer().frame(height: 60)
                     VStack(spacing: 24) {
-                        // Logo - Large with gold shadow
-                        VStack(spacing: 20) {
-                            TrainerMatchLogo(size: .large)
-                                .shadow(color: .tmGold.opacity(0.3), radius: 20, x: 0, y: 10)
-                        }
-                        
-                        // Title
+                        TrainerMatchLogo(size: .large)
+                            .shadow(color: .tmGold.opacity(0.3), radius: 20, x: 0, y: 10)
+
                         VStack(spacing: 8) {
                             Text("It's Match Time!")
-                                .font(.system(size: 42, weight: .bold))
-                                .italic()
-                                .foregroundColor(.black)
-                            
+                                .font(.system(size: 42, weight: .bold)).italic().foregroundColor(.black)
                             Text("Tweak the filters to match with trainers who fit your goals.")
-                                .font(.subheadline)
-                                .foregroundColor(.black.opacity(0.8))
-                                .multilineTextAlignment(.center)
-                                .padding(.horizontal)
+                                .font(.subheadline).foregroundColor(.black.opacity(0.8))
+                                .multilineTextAlignment(.center).padding(.horizontal)
                         }
-                        
-                        // Search Form
+
                         VStack(spacing: 16) {
-                            // City Input
                             TextField("Enter City", text: $city)
-                                .padding()
-                                .background(Color.white)
-                                .cornerRadius(25)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 25)
-                                        .stroke(Color.gray.opacity(0.2), lineWidth: 1)
-                                )
-                            
-                            // Specialty Picker
+                                .padding().background(Color.white).cornerRadius(25)
+                                .overlay(RoundedRectangle(cornerRadius: 25)
+                                    .stroke(Color.gray.opacity(0.2), lineWidth: 1))
+
                             Menu {
-                                ForEach(TrainerSpecialty.allCases.prefix(15), id: \.self) { specialty in
-                                    Button(specialty.rawValue) {
-                                        selectedSpecialty = specialty
-                                    }
+                                Button("Any Specialty") { selectedSpecialty = nil }
+                                ForEach(TrainerSpecialty.allCases.prefix(20), id: \.self) { s in
+                                    Button(s.rawValue) { selectedSpecialty = s }
                                 }
                             } label: {
                                 HStack {
                                     Text(selectedSpecialty?.rawValue ?? "Specialty")
                                         .foregroundColor(selectedSpecialty == nil ? .gray : .black)
                                     Spacer()
-                                    Image(systemName: "chevron.down")
-                                        .foregroundColor(.gray)
+                                    Image(systemName: "chevron.down").foregroundColor(.gray)
                                 }
-                                .padding()
-                                .background(Color.white)
-                                .cornerRadius(25)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 25)
-                                        .stroke(Color.gray.opacity(0.2), lineWidth: 1)
-                                )
+                                .padding().background(Color.white).cornerRadius(25)
+                                .overlay(RoundedRectangle(cornerRadius: 25)
+                                    .stroke(Color.gray.opacity(0.2), lineWidth: 1))
                             }
-                            
-                            // Workout Format Picker
+
                             Menu {
-                                Button("In-Person") {
-                                    selectedServiceType = .inPerson
-                                }
-                                Button("Online") {
-                                    selectedServiceType = .online
-                                }
-                                Button("Both") {
-                                    selectedServiceType = .both
-                                }
+                                Button("In-Person") { selectedServiceType = .inPerson }
+                                Button("Online")    { selectedServiceType = .online }
+                                Button("Both")      { selectedServiceType = .both }
                             } label: {
                                 HStack {
-                                    Text(selectedServiceType.rawValue)
-                                        .foregroundColor(.black)
+                                    Text(selectedServiceType.rawValue).foregroundColor(.black)
                                     Spacer()
-                                    Image(systemName: "chevron.down")
-                                        .foregroundColor(.gray)
+                                    Image(systemName: "chevron.down").foregroundColor(.gray)
                                 }
-                                .padding()
-                                .background(Color.white)
-                                .cornerRadius(25)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 25)
-                                        .stroke(Color.gray.opacity(0.2), lineWidth: 1)
-                                )
+                                .padding().background(Color.white).cornerRadius(25)
+                                .overlay(RoundedRectangle(cornerRadius: 25)
+                                    .stroke(Color.gray.opacity(0.2), lineWidth: 1))
                             }
-                            
-                            // Gender Picker
+
                             Menu {
-                                Button("Any") { selectedGender = "Any" }
-                                Button("Male") { selectedGender = "Male" }
+                                Button("Any")    { selectedGender = "Any" }
+                                Button("Male")   { selectedGender = "Male" }
                                 Button("Female") { selectedGender = "Female" }
                             } label: {
                                 HStack {
-                                    Text(selectedGender)
+                                    Text(selectedGender == "Any" ? "Any Gender" : selectedGender)
                                         .foregroundColor(.black)
                                     Spacer()
-                                    Image(systemName: "chevron.down")
-                                        .foregroundColor(.gray)
+                                    Image(systemName: "chevron.down").foregroundColor(.gray)
                                 }
-                                .padding()
-                                .background(Color.white)
-                                .cornerRadius(25)
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 25)
-                                        .stroke(Color.gray.opacity(0.2), lineWidth: 1)
-                                )
+                                .padding().background(Color.white).cornerRadius(25)
+                                .overlay(RoundedRectangle(cornerRadius: 25)
+                                    .stroke(Color.gray.opacity(0.2), lineWidth: 1))
                             }
-                            
-                            // Show Matches Button
+
                             Button(action: {
-                                showingResults = true
+                                Task {
+                                    isLoading = true
+                                    supabaseTrainers = (try? await SupabaseAuthManager.shared.searchTrainers(
+                                        city: city.isEmpty ? nil : city,
+                                        specialties: selectedSpecialty.map { [$0.rawValue] } ?? [],
+                                        serviceType: selectedServiceType == .both ? nil : selectedServiceType.rawValue,
+                                        gender: selectedGender == "Any" ? nil : selectedGender
+                                    )) ?? []
+                                    isLoading = false
+                                    showingResults = true
+                                }
                             }) {
-                                Text("SHOW MATCHES")
-                                    .font(.system(size: 15, weight: .heavy))
-                                    .tracking(0.5)
-                                    .foregroundColor(.white)
-                                    .frame(maxWidth: .infinity)
-                                    .frame(height: 54)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 27)
-                                            .fill(Color.black)
-                                    )
+                                HStack(spacing: 8) {
+                                    if isLoading { ProgressView().tint(.white).scaleEffect(0.8) }
+                                    Text("SHOW MATCHES")
+                                        .font(.system(size: 15, weight: .heavy)).tracking(0.5)
+                                        .foregroundColor(.white)
+                                }
+                                .frame(maxWidth: .infinity).frame(height: 54)
+                                .background(RoundedRectangle(cornerRadius: 27).fill(Color.black))
+                                .shadow(color: .black.opacity(0.3), radius: 8, x: 0, y: 4)
                             }
                             .padding(.top, 8)
                         }
                         .padding(.horizontal, 30)
                     }
                     .padding(.vertical, 40)
-                    .background(
-                        RoundedRectangle(cornerRadius: 30)
-                            .fill(Color.white)
-                    )
+                    .background(RoundedRectangle(cornerRadius: 30).fill(Color.white))
                     .padding(.horizontal, 20)
-                    
-                    Spacer()
-                        .frame(height: 60)
+                    Spacer().frame(height: 60)
                 }
             }
         }
         .navigationTitle("Find Trainers")
         .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(true)
+        .toolbarBackground(Color.black, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button(action: { dismiss() }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                        Text("Back")
+                    }
+                    .foregroundColor(.tmGold)
+                }
+            }
+        }
         .sheet(isPresented: $showingResults) {
-            TrainerResultsView(
-                city: city,
-                specialty: selectedSpecialty,
-                serviceType: selectedServiceType,
-                gender: selectedGender
-            )
+            SupabaseTrainerResultsView(trainers: supabaseTrainers)
         }
     }
 }
 
-// MARK: - Trainer Results View
-struct TrainerResultsView: View {
+// MARK: - Supabase Results Sheet
+
+struct SupabaseTrainerResultsView: View {
     @Environment(\.dismiss) var dismiss
-    let city: String
-    let specialty: TrainerSpecialty?
-    let serviceType: ServiceType
-    let gender: String
-    
-    // Sample trainer results with photos
-    let trainers = [
-        (name: "Cesarina Jones", specialty: "Pilates", serviceType: "In-Person", gender: "Female", image: "figure.yoga"),
-        (name: "Jayke Fizer", specialty: "Bodybuilding", serviceType: "In-Person, Online", gender: "Male", image: "figure.strengthtraining.traditional"),
-        (name: "Mario Kutz", specialty: "Pilates", serviceType: "In-Person", gender: "Male", image: "figure.mind.and.body"),
-        (name: "Jessica Moore", specialty: "CXWORX", serviceType: "In-Person", gender: "Female", image: "figure.core.training"),
-        (name: "Sarah Chen", specialty: "Yoga", serviceType: "Online", gender: "Female", image: "figure.flexibility"),
-        (name: "Mike Rodriguez", specialty: "CrossFit", serviceType: "In-Person", gender: "Male", image: "figure.highintensity.intervaltraining")
-    ]
-    
-    let columns = [
-        GridItem(.flexible(), spacing: 16),
-        GridItem(.flexible(), spacing: 16)
-    ]
-    
+    let trainers: [TrainerRow]
+    let columns = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
+
     var body: some View {
         NavigationView {
-            ScrollView {
-                VStack(spacing: 20) {
-                    // Header with logo
-                    VStack(spacing: 20) {
-                        TrainerMatchLogo(size: .large)
-                            .shadow(color: .tmGold.opacity(0.3), radius: 20, x: 0, y: 10)
-                        
-                        Text("Match Results")
-                            .font(.title)
-                            .fontWeight(.bold)
-                    }
-                    .padding(.top, 20)
-                    
-                    // Trainer Grid
-                    LazyVGrid(columns: columns, spacing: 16) {
-                        ForEach(trainers.indices, id: \.self) { index in
-                            NavigationLink(destination: TrainerDetailView(trainer: trainers[index])) {
-                                TrainerProfileCard(trainer: trainers[index])
+            ZStack {
+                Color.black.ignoresSafeArea()
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 0) {
+                        VStack(spacing: 12) {
+                            TrainerMatchLogo(size: .medium)
+                                .shadow(color: .tmGold.opacity(0.3), radius: 15, x: 0, y: 5)
+                            Text("Match Results")
+                                .font(.system(size: 26, weight: .bold)).foregroundColor(.white)
+                            Text("\(trainers.count) trainer\(trainers.count == 1 ? "" : "s") found")
+                                .font(.subheadline).foregroundColor(.tmGold)
+                        }
+                        .padding(.top, 30).padding(.bottom, 10)
+
+                        GymAdBannerView().padding(.horizontal, 16).padding(.bottom, 10)
+
+                        if trainers.isEmpty {
+                            VStack(spacing: 16) {
+                                Image(systemName: "person.2.slash")
+                                    .font(.system(size: 48)).foregroundColor(.white.opacity(0.15))
+                                Text("No matches found").font(.title3).foregroundColor(.white.opacity(0.4))
+                                Text("Try adjusting your filters.")
+                                    .font(.subheadline).foregroundColor(.white.opacity(0.25))
                             }
-                            .buttonStyle(PlainButtonStyle())
+                            .padding(.top, 40)
+                        } else {
+                            LazyVGrid(columns: columns, spacing: 12) {
+                                ForEach(trainers) { trainer in
+                                    NavigationLink(destination:
+                                        SupabaseTrainerPublicProfileView(trainer: trainer)) {
+                                        SupabaseTrainerNearbyCard(trainer: trainer)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                            .padding(.horizontal, 16).padding(.bottom, 40)
                         }
                     }
-                    .padding(.horizontal)
                 }
-                .padding(.bottom, 20)
             }
-            .background(Color(.systemGroupedBackground))
             .navigationTitle("")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(Color.black, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button(action: { dismiss() }) {
@@ -245,124 +210,92 @@ struct TrainerResultsView: View {
                             Image(systemName: "chevron.left")
                             Text("Back")
                         }
-                    }
-                }
-                
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button(action: {}) {
-                        Image(systemName: "line.3.horizontal.decrease.circle")
+                        .foregroundColor(.tmGold)
                     }
                 }
             }
         }
+        .navigationViewStyle(StackNavigationViewStyle())
     }
 }
 
-// MARK: - Trainer Profile Card (Website Style)
-struct TrainerProfileCard: View {
-    let trainer: (name: String, specialty: String, serviceType: String, gender: String, image: String)
-    
+// MARK: - Keep old results for backward compat
+struct TrainerResultsView: View {
+    @Environment(\.dismiss) var dismiss
+    let city: String
+    let specialty: TrainerSpecialty?
+    let serviceType: ServiceType
+    let gender: String
+    let allTrainers: [SavedTrainerProfile]
+
+    private var results: [SavedTrainerProfile] {
+        allTrainers.filter { matchesFilters($0) }
+    }
+
+    private func matchesFilters(_ t: SavedTrainerProfile) -> Bool {
+        if !city.trimmingCharacters(in: .whitespaces).isEmpty {
+            if !t.city.localizedCaseInsensitiveContains(city) { return false }
+        }
+        if let s = specialty { if !t.specialties.contains(s) { return false } }
+        if gender != "Any" {
+            if !t.gender.isEmpty && t.gender.lowercased() != gender.lowercased() { return false }
+        }
+        return true
+    }
+
+    let columns = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
+
     var body: some View {
-        VStack(spacing: 0) {
-            // Image Section
-            ZStack(alignment: .topTrailing) {
-                // Profile Image
-                ZStack {
-                    Rectangle()
-                        .fill(
-                            LinearGradient(
-                                colors: [Color.gray.opacity(0.3), Color.gray.opacity(0.5)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(height: 180)
-                    
-                    Image(systemName: trainer.image)
-                        .font(.system(size: 60))
-                        .foregroundColor(.white.opacity(0.9))
-                }
-                
-                // Service Type Badges (Top Right)
-                VStack(spacing: 6) {
-                    ForEach(Array(serviceTypeBadges.enumerated()), id: \.offset) { index, badge in
-                        ServiceBadge(text: badge.text, color: badge.color)
+        NavigationView {
+            ZStack {
+                Color.black.ignoresSafeArea()
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 0) {
+                        VStack(spacing: 12) {
+                            TrainerMatchLogo(size: .medium)
+                            Text("Match Results").font(.system(size: 26, weight: .bold)).foregroundColor(.white)
+                            Text("\(results.count) trainer\(results.count == 1 ? "" : "s") found")
+                                .font(.subheadline).foregroundColor(.tmGold)
+                        }
+                        .padding(.top, 30).padding(.bottom, 10)
+                        GymAdBannerView().padding(.horizontal, 16).padding(.bottom, 10)
+                        if results.isEmpty {
+                            VStack(spacing: 16) {
+                                Image(systemName: "person.2.slash")
+                                    .font(.system(size: 48)).foregroundColor(.white.opacity(0.15))
+                                Text("No matches found").font(.title3).foregroundColor(.white.opacity(0.4))
+                            }.padding(.top, 40)
+                        } else {
+                            LazyVGrid(columns: columns, spacing: 12) {
+                                ForEach(results) { trainer in
+                                    NavigationLink(destination: TrainerPublicProfileView(trainer: trainer)) {
+                                        TrainerNearbyCard(trainer: trainer)
+                                    }.buttonStyle(.plain)
+                                }
+                            }
+                            .padding(.horizontal, 16).padding(.bottom, 40)
+                        }
                     }
                 }
-                .padding(10)
             }
-            
-            // Info Section with Gold Background
-            VStack(spacing: 8) {
-                Text(trainer.name)
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundColor(.black)
-                
-                Text(trainer.specialty.uppercased())
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(.black.opacity(0.7))
-                    .tracking(0.5)
+            .navigationTitle("").navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(Color.black, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(action: { dismiss() }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.left"); Text("Back")
+                        }.foregroundColor(.tmGold)
+                    }
+                }
             }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
-            .background(
-                LinearGradient(
-                    colors: [
-                        Color(red: 0.88, green: 0.73, blue: 0.25),
-                        Color(red: 0.85, green: 0.68, blue: 0.20)
-                    ],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                )
-            )
         }
-        .clipShape(RoundedRectangle(cornerRadius: 15))
-        .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 4)
-    }
-    
-    private var serviceTypeBadges: [(text: String, color: Color)] {
-        var badges: [(String, Color)] = []
-        
-        // Check for featured
-        if Int.random(in: 0...2) == 0 {
-            badges.append(("FEATURED", .red))
-        }
-        
-        // Add service type badges
-        if trainer.serviceType.contains("In-Person") {
-            badges.append(("IN-PERSON", .blue))
-        }
-        if trainer.serviceType.contains("Online") {
-            badges.append(("ONLINE", .purple))
-        }
-        
-        // Add gender badge
-        badges.append((trainer.gender.uppercased(), .gray))
-        
-        return badges
-    }
-}
-
-// MARK: - Service Badge
-struct ServiceBadge: View {
-    let text: String
-    let color: Color
-    
-    var body: some View {
-        Text(text)
-            .font(.system(size: 9, weight: .heavy))
-            .foregroundColor(.white)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(
-                Capsule()
-                    .fill(color)
-            )
+        .navigationViewStyle(StackNavigationViewStyle())
     }
 }
 
 #Preview {
-    NavigationView {
-        TrainerSearchView()
-    }
+    NavigationView { TrainerSearchView() }
 }

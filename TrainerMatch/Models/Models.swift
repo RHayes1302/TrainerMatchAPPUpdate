@@ -14,7 +14,7 @@ enum UserRole: String, Codable {
     case client
 }
 
-// MARK: - Trainer Specialties (from TrainerMatch)
+// MARK: - Trainer Specialties
 enum TrainerSpecialty: String, Codable, CaseIterable {
     case personalTraining = "Personal Training"
     case yoga = "Yoga"
@@ -43,9 +43,8 @@ enum TrainerSpecialty: String, Codable, CaseIterable {
     case other = "Other"
 }
 
-// MARK: - Trainer Certifications (NEW)
+// MARK: - Trainer Certifications
 enum TrainerCertification: String, Codable, CaseIterable {
-    // Major Organizations
     case nasmCpt = "NASM-CPT"
     case aceCpt = "ACE-CPT"
     case nscaCscs = "NSCA-CSCS"
@@ -54,8 +53,6 @@ enum TrainerCertification: String, Codable, CaseIterable {
     case afaaCpt = "AFAA-CPT"
     case nfptCpt = "NFPT-CPT"
     case acsm = "ACSM-CPT"
-    
-    // Specialty Certifications
     case precisionNutrition = "Precision Nutrition"
     case nasmCes = "NASM-CES (Corrective Exercise)"
     case nasmPes = "NASM-PES (Performance)"
@@ -64,30 +61,25 @@ enum TrainerCertification: String, Codable, CaseIterable {
     case crossfitL2 = "CrossFit Level 2"
     case usaWeightlifting = "USA Weightlifting"
     case usaPowerlifting = "USA Powerlifting"
-    
-    // Yoga & Pilates
     case ryt200 = "RYT-200 (Yoga)"
     case ryt500 = "RYT-500 (Yoga)"
     case pilatesInstructor = "Pilates Instructor"
     case stottPilates = "STOTT Pilates"
-    
-    // Special Populations
     case prenatalPostnatal = "Prenatal/Postnatal"
     case seniorFitness = "Senior Fitness Specialist"
     case youthFitness = "Youth Fitness Specialist"
     case cancerExercise = "Cancer Exercise Specialist"
-    
-    // Other
     case firstAidCpr = "First Aid/CPR"
     case nutritionist = "Certified Nutritionist"
     case dietitian = "Registered Dietitian"
     case other = "Other Certification"
-    
+
     var category: String {
         switch self {
         case .nasmCpt, .aceCpt, .nscaCscs, .nscaCpt, .ismaCft, .afaaCpt, .nfptCpt, .acsm:
             return "General CPT"
-        case .precisionNutrition, .nasmCes, .nasmPes, .aceFitness, .crossfitL1, .crossfitL2, .usaWeightlifting, .usaPowerlifting:
+        case .precisionNutrition, .nasmCes, .nasmPes, .aceFitness,
+             .crossfitL1, .crossfitL2, .usaWeightlifting, .usaPowerlifting:
             return "Specialty"
         case .ryt200, .ryt500, .pilatesInstructor, .stottPilates:
             return "Yoga/Pilates"
@@ -99,9 +91,8 @@ enum TrainerCertification: String, Codable, CaseIterable {
     }
 }
 
-// MARK: - Training Schools (NEW)
+// MARK: - Training Schools
 enum TrainingSchool: String, Codable, CaseIterable {
-    // Major Certification Bodies
     case nasm = "National Academy of Sports Medicine (NASM)"
     case ace = "American Council on Exercise (ACE)"
     case nsca = "National Strength & Conditioning Association (NSCA)"
@@ -110,31 +101,23 @@ enum TrainingSchool: String, Codable, CaseIterable {
     case afaa = "Athletics and Fitness Association of America (AFAA)"
     case nfpt = "National Federation of Professional Trainers (NFPT)"
     case issa = "International Sports Sciences Association (ISSA)"
-    
-    // Universities & Colleges
     case exerciseScience = "Exercise Science Degree Program"
     case kinesiology = "Kinesiology Degree Program"
     case sportsScience = "Sports Science Degree Program"
     case physicalEducation = "Physical Education Degree"
     case lionelUniversity = "Lionel University"
-    
-    // Specialty Schools
     case crossfit = "CrossFit Certification"
     case yogaAlliance = "Yoga Alliance Certified School"
     case pilatesMethod = "Pilates Method Alliance School"
     case precisionNutrition = "Precision Nutrition Certification"
-    
-    // Online Platforms
     case nasmOnline = "NASM Online Learning"
     case aceOnline = "ACE Online Academy"
     case nscaOnline = "NSCA Online Education"
     case issaOnline = "ISSA Online Certification"
-    
-    // Other
     case apprenticeship = "Apprenticeship/Mentorship"
     case militaryFitness = "Military Fitness Training"
     case other = "Other Training Program"
-    
+
     var icon: String {
         switch self {
         case .nasm, .ace, .nsca, .acsm, .isma, .afaa, .nfpt, .issa:
@@ -158,7 +141,7 @@ enum ServiceType: String, Codable, CaseIterable {
     case both = "Both"
 }
 
-// MARK: - Trainer Profile (TrainerMatch Integration)
+// MARK: - Trainer Profile
 struct TrainerProfile: Identifiable, Codable {
     var id: String = UUID().uuidString
     var userId: String
@@ -170,6 +153,7 @@ struct TrainerProfile: Identifiable, Codable {
     var serviceTypes: [ServiceType]
     var location: TrainerLocation?
     var hourlyRate: Double?
+    var monthlyRate: Double?        // ✅ added
     var profileImageURL: String?
     var websiteURL: String?
     var instagramHandle: String?
@@ -195,95 +179,76 @@ struct Client: Identifiable, Codable {
     var profileImageURL: String?
     var dateJoined: Date
     var trainerId: String
-    
-    // Health metrics
     var currentWeight: Double?
     var goalWeight: Double?
-    var height: Double? // in cm
-    
-    // Activity data (synced from HealthKit)
+    var height: Double?
     var dailySteps: Int = 0
     var dailyDistance: Double = 0.0
     var activityStatus: String = "Not Active"
     var lastSyncDate: Date?
-    
-    // TrainerMatch specific
     var fitnessGoals: [FitnessGoal] = []
     var preferredServiceType: ServiceType?
-    var foundVia: String? // "TrainerMatch", "Referral", etc.
-    
-    // Notes from trainer
+    var foundVia: String?
     var trainerNotes: String?
 }
 
-// MARK: - Fitness Goals (EXPANDED)
+// MARK: - Fitness Goals
 enum FitnessGoal: String, Codable, CaseIterable {
-    // Weight Management
     case weightLoss = "Weight Loss"
     case toneUp = "Tone & Sculpt"
     case muscleGain = "Build Muscle"
     case bodyRecomposition = "Body Recomposition"
-    
-    // Health & Wellness
     case generalFitness = "General Fitness"
     case improveHealth = "Improve Overall Health"
     case heartHealth = "Cardiovascular Health"
     case betterSleep = "Better Sleep"
     case increaseEnergy = "Increase Energy"
     case stressRelief = "Reduce Stress"
-    
-    // Performance
     case athleticPerformance = "Athletic Performance"
     case increaseStrength = "Increase Strength"
     case buildEndurance = "Build Endurance"
     case improveSpeed = "Improve Speed & Agility"
-    
-    // Flexibility & Recovery
     case flexibility = "Flexibility & Mobility"
     case rehabilitation = "Injury Rehabilitation"
     case preventInjury = "Injury Prevention"
     case posture = "Improve Posture"
-    
-    // Lifestyle & Events
     case wedding = "Wedding Preparation"
     case postPregnancy = "Post-Pregnancy Recovery"
     case seniorFitness = "Active Aging/Senior Fitness"
     case sportSpecific = "Sport-Specific Training"
-    
-    // Support & Guidance
     case nutrition = "Nutrition Guidance"
     case accountability = "Accountability & Motivation"
     case learnProperForm = "Learn Proper Form"
     case buildConfidence = "Build Confidence"
-    
+
     var icon: String {
         switch self {
-        case .weightLoss: return "scalemass"
-        case .toneUp: return "figure.strengthtraining.traditional"
-        case .muscleGain: return "dumbbell.fill"
-        case .bodyRecomposition: return "chart.line.uptrend.xyaxis"
-        case .generalFitness: return "heart.fill"
-        case .improveHealth: return "cross.case.fill"
-        case .heartHealth: return "heart.circle.fill"
-        case .betterSleep: return "bed.double.fill"
-        case .increaseEnergy: return "bolt.fill"
-        case .stressRelief: return "brain.head.profile"
+        case .weightLoss:          return "scalemass"
+        case .toneUp:              return "figure.strengthtraining.traditional"
+        case .muscleGain:          return "dumbbell.fill"
+        case .bodyRecomposition:   return "chart.line.uptrend.xyaxis"
+        case .generalFitness:      return "heart.fill"
+        case .improveHealth:       return "cross.case.fill"
+        case .heartHealth:         return "heart.circle.fill"
+        case .betterSleep:         return "bed.double.fill"
+        case .increaseEnergy:      return "bolt.fill"
+        case .stressRelief:        return "brain.head.profile"
         case .athleticPerformance: return "sportscourt.fill"
-        case .increaseStrength: return "figure.strengthtraining.traditional"
-        case .buildEndurance: return "figure.run"
-        case .improveSpeed: return "hare.fill"
-        case .flexibility: return "figure.yoga"
-        case .rehabilitation: return "bandage.fill"
-        case .preventInjury: return "shield.fill"
-        case .posture: return "figure.stand"
-        case .wedding: return "heart.circle"
-        case .postPregnancy: return "figure.and.child.holdinghands"
-        case .seniorFitness: return "figure.walk"
-        case .sportSpecific: return "tennis.racket"
-        case .nutrition: return "carrot.fill"
-        case .accountability: return "checkmark.circle.fill"
-        case .learnProperForm: return "eye.fill"
-        case .buildConfidence: return "star.fill"
+        case .increaseStrength:    return "figure.strengthtraining.traditional"
+        case .buildEndurance:      return "figure.run"
+        case .improveSpeed:        return "hare.fill"
+        case .flexibility:         return "figure.yoga"
+        case .rehabilitation:      return "bandage.fill"
+        case .preventInjury:       return "shield.fill"
+        case .posture:             return "figure.stand"
+        case .wedding:             return "heart.circle"
+        case .postPregnancy:       return "figure.and.child.holdinghands"
+        case .seniorFitness:       return "figure.walk"
+        case .sportSpecific:       return "tennis.racket"
+        case .nutrition:           return "carrot.fill"
+        case .accountability:      return "checkmark.circle.fill"
+        case .learnProperForm:     return "eye.fill"
+        case .buildConfidence:     return "star.fill"
         }
     }
 }
@@ -296,8 +261,8 @@ struct Exercise: Identifiable, Codable {
     var description: String?
     var sets: Int?
     var reps: Int?
-    var duration: Int? // in seconds
-    var restTime: Int? // in seconds
+    var duration: Int?
+    var restTime: Int?
     var videoURL: String?
     var imageURL: String?
 }
@@ -323,7 +288,7 @@ struct Workout: Identifiable, Codable {
     var clientId: String
     var trainerId: String
     var difficulty: WorkoutDifficulty
-    var estimatedDuration: Int? // in minutes
+    var estimatedDuration: Int?
 }
 
 enum WorkoutDifficulty: String, Codable, CaseIterable {
@@ -345,83 +310,31 @@ struct ProgressEntry: Identifiable, Codable {
 }
 
 struct BodyMeasurements: Codable {
-    var chest: Double? // in cm
+    var chest: Double?
     var waist: Double?
     var hips: Double?
     var thighs: Double?
     var arms: Double?
 }
 
-// MARK: - Sample Data for Preview/Testing
+// MARK: - Sample Data
 extension Client {
-    static let sampleClients: [Client] = [
-        Client(
-            name: "John Doe",
-            email: "john.doe@email.com",
-            phoneNumber: "+1234567890",
-            dateJoined: Date().addingTimeInterval(-30*24*60*60),
-            trainerId: "trainer1",
-            currentWeight: 85.5,
-            goalWeight: 75.0,
-            height: 180,
-            dailySteps: 8500,
-            dailyDistance: 6.2,
-            activityStatus: "Active",
-            lastSyncDate: Date(),
-            fitnessGoals: [.weightLoss, .generalFitness],
-            preferredServiceType: .inPerson,
-            foundVia: "TrainerMatch",
-            trainerNotes: "Great progress this month! Keep up the consistency."
-        ),
-        Client(
-            name: "Sarah Johnson",
-            email: "sarah.j@email.com",
-            phoneNumber: "+1987654321",
-            dateJoined: Date().addingTimeInterval(-60*24*60*60),
-            trainerId: "trainer1",
-            currentWeight: 68.0,
-            goalWeight: 65.0,
-            height: 165,
-            dailySteps: 12000,
-            dailyDistance: 9.8,
-            activityStatus: "Very Active",
-            lastSyncDate: Date(),
-            fitnessGoals: [.muscleGain, .athleticPerformance],
-            preferredServiceType: .both,
-            foundVia: "TrainerMatch",
-            trainerNotes: "Excellent dedication! Ready for advanced workouts."
-        ),
-        Client(
-            name: "Mike Williams",
-            email: "mike.w@email.com",
-            dateJoined: Date().addingTimeInterval(-15*24*60*60),
-            trainerId: "trainer1",
-            currentWeight: 92.0,
-            goalWeight: 82.0,
-            height: 175,
-            dailySteps: 4500,
-            dailyDistance: 3.2,
-            activityStatus: "Lightly Active",
-            lastSyncDate: Date(),
-            fitnessGoals: [.weightLoss, .accountability],
-            preferredServiceType: .online,
-            foundVia: "Referral",
-            trainerNotes: "New client - building foundation and consistency."
-        )
-    ]
+    static let sampleClients: [Client] = []
 }
 
 extension TrainerProfile {
     static let sampleProfile = TrainerProfile(
         userId: "trainer1",
         businessName: "Elite Fitness Studio",
-        bio: "Certified personal trainer with 10+ years of experience helping clients achieve their fitness goals. Specializing in strength training, HIIT, and weight loss programs.",
+        bio: "Certified personal trainer with 10+ years of experience helping clients achieve their fitness goals.",
         specialties: [.personalTraining, .hiit, .strength, .nutrition],
         certifications: ["NASM-CPT", "ISSA-CFT", "Precision Nutrition Level 1"],
         yearsOfExperience: 10,
         serviceTypes: [.inPerson, .online],
-        location: TrainerLocation(city: "Las Vegas", state: "Nevada", latitude: 36.1699, longitude: -115.1398),
+        location: TrainerLocation(city: "Las Vegas", state: "Nevada",
+                                  latitude: 36.1699, longitude: -115.1398),
         hourlyRate: 75.0,
+        monthlyRate: 200.0,         // ✅ added
         isVerified: true,
         rating: 4.8,
         totalReviews: 127
@@ -430,92 +343,25 @@ extension TrainerProfile {
 
 extension Exercise {
     static let sampleExercises: [Exercise] = [
-        Exercise(
-            name: "Push-ups",
-            category: .strength,
-            description: "Standard push-ups for chest and triceps",
-            sets: 3,
-            reps: 15,
-            restTime: 60
-        ),
-        Exercise(
-            name: "Running",
-            category: .cardio,
-            description: "Moderate pace running",
-            duration: 1800, // 30 minutes
-            restTime: 120
-        ),
-        Exercise(
-            name: "Squats",
-            category: .strength,
-            description: "Bodyweight squats for legs",
-            sets: 4,
-            reps: 20,
-            restTime: 90
-        ),
-        Exercise(
-            name: "Plank",
-            category: .strength,
-            description: "Core stability exercise",
-            sets: 3,
-            duration: 60,
-            restTime: 60
-        )
+        Exercise(name: "Push-ups", category: .strength,
+                 description: "Standard push-ups for chest and triceps",
+                 sets: 3, reps: 15, restTime: 60),
+        Exercise(name: "Running", category: .cardio,
+                 description: "Moderate pace running",
+                 duration: 1800, restTime: 120),
+        Exercise(name: "Squats", category: .strength,
+                 description: "Bodyweight squats for legs",
+                 sets: 4, reps: 20, restTime: 90),
+        Exercise(name: "Plank", category: .strength,
+                 description: "Core stability exercise",
+                 sets: 3, duration: 60, restTime: 60)
     ]
 }
 
 extension Workout {
-    static let sampleWorkouts: [Workout] = [
-        Workout(
-            name: "Upper Body Strength",
-            description: "Focus on chest, back, and arms",
-            exercises: [
-                Exercise(name: "Push-ups", category: .strength, sets: 3, reps: 15, restTime: 60),
-                Exercise(name: "Pull-ups", category: .strength, sets: 3, reps: 10, restTime: 90),
-                Exercise(name: "Dumbbell Curls", category: .strength, sets: 3, reps: 12, restTime: 60)
-            ],
-            assignedDate: Date(),
-            dueDate: Date().addingTimeInterval(7*24*60*60),
-            clientId: "client1",
-            trainerId: "trainer1",
-            difficulty: .intermediate,
-            estimatedDuration: 45
-        ),
-        Workout(
-            name: "Cardio Blast",
-            description: "High intensity interval training",
-            exercises: [
-                Exercise(name: "Running", category: .cardio, duration: 300, restTime: 60),
-                Exercise(name: "Burpees", category: .cardio, sets: 5, reps: 10, restTime: 45),
-                Exercise(name: "Jump Rope", category: .cardio, duration: 180, restTime: 60)
-            ],
-            assignedDate: Date().addingTimeInterval(-2*24*60*60),
-            dueDate: Date().addingTimeInterval(5*24*60*60),
-            clientId: "client1",
-            trainerId: "trainer1",
-            difficulty: .advanced,
-            estimatedDuration: 30
-        )
-    ]
+    static let sampleWorkouts: [Workout] = []
 }
 
 extension ProgressEntry {
-    static let sampleEntries: [ProgressEntry] = [
-        ProgressEntry(
-            clientId: "client1",
-            date: Date(),
-            weight: 85.5,
-            bodyFat: 18.5,
-            measurements: BodyMeasurements(chest: 100, waist: 85, hips: 95, thighs: 58, arms: 35),
-            notes: "Feeling strong this week!"
-        ),
-        ProgressEntry(
-            clientId: "client1",
-            date: Date().addingTimeInterval(-7*24*60*60),
-            weight: 86.2,
-            bodyFat: 19.0,
-            measurements: BodyMeasurements(chest: 101, waist: 87, hips: 96, thighs: 59, arms: 35),
-            notes: "Starting to see changes"
-        )
-    ]
+    static let sampleEntries: [ProgressEntry] = []
 }

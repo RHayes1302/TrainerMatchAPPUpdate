@@ -5,296 +5,265 @@
 //  Created by Ramone Hayes on 2/10/26.
 //
 
+//
+//  ProgressPhotoGalleryView.swift
+//  TrainerMatch
+//
+//  Updated to display real photos saved to device storage
+//
+
 import SwiftUI
+
+// MARK: - Gallery View
 
 struct ProgressPhotoGalleryView: View {
     let client: Client
     let progressEntries: [ProgressEntry]
     @State private var selectedEntry: ProgressEntry?
-    
+
     var entriesWithPhotos: [ProgressEntry] {
-        progressEntries.filter { $0.photoURLs != nil && !$0.photoURLs!.isEmpty }
+        progressEntries
+            .filter { $0.photoURLs != nil && !$0.photoURLs!.isEmpty }
+            .sorted { $0.date > $1.date }
     }
-    
+
     var body: some View {
-        ScrollView {
-            VStack(spacing: 24) {
-                // Header
-                VStack(spacing: 8) {
-                    Text("\(client.name)'s Progress")
-                        .font(.title2)
-                        .fontWeight(.bold)
-                    
-                    if !entriesWithPhotos.isEmpty {
-                        Text("\(entriesWithPhotos.count) photo entries")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                }
-                .padding(.top)
-                
-                if entriesWithPhotos.isEmpty {
-                    // Empty State
-                    VStack(spacing: 16) {
-                        Image(systemName: "photo.on.rectangle.angled")
-                            .font(.system(size: 60))
-                            .foregroundColor(.gray)
-                        
-                        Text("No Progress Photos Yet")
-                            .font(.headline)
-                            .foregroundColor(.secondary)
-                        
-                        Text("Add progress entries with photos to track \(client.name)'s transformation journey")
-                            .font(.subheadline)
-                            .foregroundColor(.gray)
-                            .multilineTextAlignment(.center)
-                            .padding(.horizontal, 40)
-                    }
-                    .padding(.vertical, 60)
-                } else {
-                    // Timeline View
+        ZStack {
+            Color.black.ignoresSafeArea()
+
+            if entriesWithPhotos.isEmpty {
+                emptyState
+            } else {
+                ScrollView {
                     LazyVStack(spacing: 20) {
-                        ForEach(entriesWithPhotos.sorted(by: { $0.date > $1.date })) { entry in
+                        ForEach(entriesWithPhotos) { entry in
                             ProgressPhotoCard(entry: entry, client: client)
-                                .onTapGesture {
-                                    selectedEntry = entry
-                                }
+                                .onTapGesture { selectedEntry = entry }
                         }
                     }
-                    .padding(.horizontal)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 16)
+                    .padding(.bottom, 40)
                 }
             }
-            .padding(.bottom, 20)
         }
         .navigationTitle("Progress Photos")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(Color.black, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbarColorScheme(.dark, for: .navigationBar)
         .sheet(item: $selectedEntry) { entry in
             ProgressPhotoDetailView(entry: entry, client: client)
+        }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "photo.on.rectangle.angled")
+                .font(.system(size: 64))
+                .foregroundColor(.tmGold.opacity(0.4))
+            Text("No Progress Photos Yet")
+                .font(.title3)
+                .fontWeight(.bold)
+                .foregroundColor(.white)
+            Text("Add progress entries with photos to track \(client.name)'s transformation")
+                .font(.subheadline)
+                .foregroundColor(.white.opacity(0.6))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 40)
         }
     }
 }
 
 // MARK: - Progress Photo Card
+
 struct ProgressPhotoCard: View {
     let entry: ProgressEntry
     let client: Client
-    
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Date Header
+        VStack(alignment: .leading, spacing: 14) {
+            // Header row
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(entry.date.formatted(date: .long, time: .omitted))
                         .font(.headline)
-                    
+                        .foregroundColor(.white)
                     if let weight = entry.weight {
-                        Text("\(String(format: "%.1f", weight)) kg")
+                        Text(String(format: "%.1f lbs", weight))
                             .font(.subheadline)
-                            .foregroundColor(.secondary)
+                            .foregroundColor(.white.opacity(0.6))
                     }
                 }
-                
                 Spacer()
-                
                 if let bodyFat = entry.bodyFat {
-                    VStack(alignment: .trailing, spacing: 4) {
+                    VStack(alignment: .trailing, spacing: 2) {
                         Text("Body Fat")
                             .font(.caption)
-                            .foregroundColor(.gray)
-                        Text("\(String(format: "%.1f", bodyFat))%")
+                            .foregroundColor(.white.opacity(0.5))
+                        Text(String(format: "%.1f%%", bodyFat))
                             .font(.headline)
                             .foregroundColor(.tmGold)
                     }
                 }
             }
-            
-            // Photos Grid
-            if let photoURLs = entry.photoURLs {
+
+            // Photos scroll row — real images from disk
+            if let keys = entry.photoURLs, !keys.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
-                        ForEach(photoURLs.indices, id: \.self) { index in
-                            PhotoThumbnail(photoURL: photoURLs[index])
+                    HStack(spacing: 10) {
+                        ForEach(keys, id: \.self) { key in
+                            StoredProgressPhoto(key: key, cornerRadius: 12, height: 160)
+                                .frame(width: 130)
                         }
                     }
                 }
             }
-            
+
             // Notes
             if let notes = entry.notes, !notes.isEmpty {
                 Text(notes)
                     .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(.white.opacity(0.7))
                     .lineLimit(2)
             }
         }
-        .padding()
+        .padding(16)
         .background(
-            RoundedRectangle(cornerRadius: 15)
-                .fill(Color(.systemBackground))
-                .shadow(color: .black.opacity(0.1), radius: 5, x: 0, y: 2)
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.white.opacity(0.06))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color.tmGold.opacity(0.2), lineWidth: 1)
+                )
         )
     }
 }
 
-// MARK: - Photo Thumbnail
-struct PhotoThumbnail: View {
-    let photoURL: String
-    
-    var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 10)
-                .fill(
-                    LinearGradient(
-                        colors: [Color.blue.opacity(0.3), Color.purple.opacity(0.3)],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .frame(width: 120, height: 160)
-            
-            // Placeholder - in real app would load actual image
-            Image(systemName: "photo.fill")
-                .font(.title)
-                .foregroundColor(.white)
-        }
-    }
-}
-
 // MARK: - Progress Photo Detail View
+
 struct ProgressPhotoDetailView: View {
     let entry: ProgressEntry
     let client: Client
     @Environment(\.dismiss) var dismiss
-    
+    @State private var selectedPhotoIndex: Int = 0
+
     var body: some View {
         NavigationView {
-            ScrollView {
-                VStack(spacing: 24) {
-                    // Date and Stats
-                    VStack(spacing: 16) {
-                        Text(entry.date.formatted(date: .long, time: .omitted))
-                            .font(.title3)
-                            .fontWeight(.semibold)
-                        
-                        // Stats Grid
-                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 16) {
+            ZStack {
+                Color.black.ignoresSafeArea()
+
+                ScrollView {
+                    VStack(spacing: 24) {
+
+                        // Full-size photo viewer
+                        if let keys = entry.photoURLs, !keys.isEmpty {
+                            TabView(selection: $selectedPhotoIndex) {
+                                ForEach(keys.indices, id: \.self) { idx in
+                                    StoredProgressPhoto(key: keys[idx], cornerRadius: 0, height: 400)
+                                        .tag(idx)
+                                }
+                            }
+                            .tabViewStyle(.page(indexDisplayMode: .automatic))
+                            .frame(height: 400)
+                            .clipShape(RoundedRectangle(cornerRadius: 16))
+                            .padding(.horizontal, 20)
+
+                            // Photo counter
+                            Text("Photo \(selectedPhotoIndex + 1) of \(keys.count)")
+                                .font(.caption)
+                                .foregroundColor(.white.opacity(0.5))
+                        }
+
+                        // Stats grid
+                        LazyVGrid(
+                            columns: [GridItem(.flexible()), GridItem(.flexible())],
+                            spacing: 14
+                        ) {
                             if let weight = entry.weight {
-                                StatCard(title: "Weight", value: "\(String(format: "%.1f", weight)) kg", color: .tmGold)
+                                DetailStatCard(title: "Weight", value: String(format: "%.1f lbs", weight))
                             }
-                            
                             if let bodyFat = entry.bodyFat {
-                                StatCard(title: "Body Fat", value: "\(String(format: "%.1f", bodyFat))%", color: .tmBlack)
+                                DetailStatCard(title: "Body Fat", value: String(format: "%.1f%%", bodyFat))
                             }
-                            
-                            if let measurements = entry.measurements {
-                                if let chest = measurements.chest {
-                                    StatCard(title: "Chest", value: "\(String(format: "%.1f", chest)) cm", color: .tmGold)
-                                }
-                                if let waist = measurements.waist {
-                                    StatCard(title: "Waist", value: "\(String(format: "%.1f", waist)) cm", color: .tmBlack)
-                                }
-                                if let hips = measurements.hips {
-                                    StatCard(title: "Hips", value: "\(String(format: "%.1f", hips)) cm", color: .tmGold)
-                                }
-                                if let thighs = measurements.thighs {
-                                    StatCard(title: "Thighs", value: "\(String(format: "%.1f", thighs)) cm", color: .tmBlack)
-                                }
+                            if let m = entry.measurements {
+                                if let v = m.chest   { DetailStatCard(title: "Chest",  value: String(format: "%.1f in", v)) }
+                                if let v = m.waist   { DetailStatCard(title: "Waist",  value: String(format: "%.1f in", v)) }
+                                if let v = m.hips    { DetailStatCard(title: "Hips",   value: String(format: "%.1f in", v)) }
+                                if let v = m.thighs  { DetailStatCard(title: "Thighs", value: String(format: "%.1f in", v)) }
+                                if let v = m.arms    { DetailStatCard(title: "Arms",   value: String(format: "%.1f in", v)) }
                             }
                         }
-                    }
-                    .padding()
-                    
-                    // Full Size Photos
-                    if let photoURLs = entry.photoURLs {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("Photos")
-                                .font(.headline)
-                                .padding(.horizontal)
-                            
-                            ForEach(photoURLs.indices, id: \.self) { index in
-                                ZStack {
-                                    RoundedRectangle(cornerRadius: 15)
-                                        .fill(
-                                            LinearGradient(
-                                                colors: [Color.blue.opacity(0.3), Color.purple.opacity(0.3)],
-                                                startPoint: .topLeading,
-                                                endPoint: .bottomTrailing
-                                            )
-                                        )
-                                        .frame(height: 400)
-                                    
-                                    // Placeholder - in real app would load actual image
-                                    VStack(spacing: 12) {
-                                        Image(systemName: "photo.fill")
-                                            .font(.system(size: 60))
-                                            .foregroundColor(.white)
-                                        
-                                        Text("Photo \(index + 1)")
-                                            .font(.headline)
-                                            .foregroundColor(.white)
-                                    }
+                        .padding(.horizontal, 20)
+
+                        // Notes
+                        if let notes = entry.notes, !notes.isEmpty {
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "note.text")
+                                        .font(.caption)
+                                    Text("NOTES")
+                                        .font(.system(size: 11, weight: .bold))
                                 }
-                                .padding(.horizontal)
+                                .foregroundColor(.black)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(Color.tmGold)
+
+                                Text(notes)
+                                    .font(.body)
+                                    .foregroundColor(.white.opacity(0.85))
+                                    .padding(.horizontal, 16)
+                                    .padding(.bottom, 16)
                             }
+                            .background(
+                                RoundedRectangle(cornerRadius: 14)
+                                    .fill(Color.white.opacity(0.06))
+                            )
+                            .padding(.horizontal, 20)
                         }
+
+                        Spacer(minLength: 40)
                     }
-                    
-                    // Notes
-                    if let notes = entry.notes, !notes.isEmpty {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("Notes")
-                                .font(.headline)
-                            
-                            Text(notes)
-                                .font(.body)
-                                .foregroundColor(.secondary)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding()
-                        .background(
-                            RoundedRectangle(cornerRadius: 15)
-                                .fill(Color(.systemGray6))
-                        )
-                        .padding(.horizontal)
-                    }
+                    .padding(.top, 16)
                 }
-                .padding(.vertical)
             }
-            .navigationTitle("Progress Details")
+            .navigationTitle(entry.date.formatted(date: .abbreviated, time: .omitted))
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(Color.black, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") {
-                        dismiss()
-                    }
+                    Button("Done") { dismiss() }
+                        .foregroundColor(.tmGold)
                 }
             }
         }
     }
 }
 
-// MARK: - Stat Card
-struct StatCard: View {
+// MARK: - Detail Stat Card
+
+struct DetailStatCard: View {
     let title: String
     let value: String
-    let color: Color
-    
+
     var body: some View {
         VStack(spacing: 8) {
             Text(title)
                 .font(.caption)
-                .foregroundColor(.gray)
-            
+                .foregroundColor(.white.opacity(0.55))
             Text(value)
                 .font(.title3)
                 .fontWeight(.bold)
-                .foregroundColor(color)
+                .foregroundColor(.tmGold)
         }
         .frame(maxWidth: .infinity)
-        .padding()
+        .padding(.vertical, 14)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(Color(.systemGray6))
+                .fill(Color.white.opacity(0.06))
         )
     }
 }

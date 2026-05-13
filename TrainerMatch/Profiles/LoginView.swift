@@ -1,4 +1,3 @@
-
 //
 //  LoginView.swift (UPDATED WITH REAL AUTH)
 //  TrainerMatch
@@ -7,6 +6,7 @@
 //
 
 import SwiftUI
+import AuthenticationServices
 
 struct LoginView: View {
     @ObservedObject private var authManager = AuthManager.shared
@@ -16,6 +16,11 @@ struct LoginView: View {
     @State private var isTrainerLogin = true
     @State private var showingSignup = false
     @State private var showingError = false
+    @State private var showingAppleSetup = false
+    @State private var appleUserId    = ""
+    @State private var appleEmail     = ""
+    @State private var appleFirstName = ""
+    @State private var appleLastName  = ""
     @State private var errorMessage = ""
     
     var body: some View {
@@ -85,14 +90,33 @@ struct LoginView: View {
                         
                         // Login Form
                         VStack(spacing: 20) {
-                            Text("LOGIN")
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundColor(.black)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 6)
-                                .background(Color.tmGold)
-                                .padding(.bottom, 8)
-                            
+                            // Apple Sign In — top for prominence
+                            SignInWithAppleButton(.signIn) { request in
+                                request.requestedScopes = [.fullName, .email]
+                            } onCompletion: { result in
+                                handleAppleSignIn(result: result)
+                            }
+                            .signInWithAppleButtonStyle(.white)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 54)
+                            .cornerRadius(27)
+                            .shadow(color: .white.opacity(0.15), radius: 8, x: 0, y: 4)
+
+                            // Divider
+                            HStack {
+                                Rectangle()
+                                    .fill(Color.white.opacity(0.2))
+                                    .frame(height: 1)
+                                Text("OR")
+                                    .font(.caption)
+                                    .foregroundColor(.white.opacity(0.5))
+                                    .padding(.horizontal, 12)
+                                Rectangle()
+                                    .fill(Color.white.opacity(0.2))
+                                    .frame(height: 1)
+                            }
+                            .padding(.vertical, 12)
+
                             // Error Message
                             if showingError {
                                 Text(errorMessage)
@@ -105,47 +129,39 @@ struct LoginView: View {
                                             .fill(Color.red.opacity(0.1))
                                     )
                             }
-                            
+
                             // Email Field
                             VStack(alignment: .leading, spacing: 8) {
-                                Text("Email")
-                                    .font(.subheadline)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.white)
-                                
+                                Text("EMAIL")
+                                    .font(.system(size: 10, weight: .bold)).tracking(1.2)
+                                    .foregroundColor(.tmGold)
                                 TextField("your@email.com", text: $email)
-                                    .padding()
-                                    .background(Color.white.opacity(0.1))
-                                    .cornerRadius(8)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 8)
-                                            .stroke(Color.white.opacity(0.2), lineWidth: 1)
-                                    )
+                                    .padding(14)
+                                    .background(Color.white.opacity(0.07))
+                                    .cornerRadius(12)
+                                    .overlay(RoundedRectangle(cornerRadius: 12)
+                                        .stroke(Color.tmGold.opacity(0.25), lineWidth: 1))
                                     .foregroundColor(.white)
                                     .keyboardType(.emailAddress)
                                     .autocapitalization(.none)
                                     .textContentType(.emailAddress)
                             }
-                            
+
                             // Password Field
                             VStack(alignment: .leading, spacing: 8) {
-                                Text("Password")
-                                    .font(.subheadline)
-                                    .fontWeight(.semibold)
-                                    .foregroundColor(.white)
-                                
+                                Text("PASSWORD")
+                                    .font(.system(size: 10, weight: .bold)).tracking(1.2)
+                                    .foregroundColor(.tmGold)
                                 SecureField("Enter password", text: $password)
-                                    .padding()
-                                    .background(Color.white.opacity(0.1))
-                                    .cornerRadius(8)
-                                    .overlay(
-                                        RoundedRectangle(cornerRadius: 8)
-                                            .stroke(Color.white.opacity(0.2), lineWidth: 1)
-                                    )
+                                    .padding(14)
+                                    .background(Color.white.opacity(0.07))
+                                    .cornerRadius(12)
+                                    .overlay(RoundedRectangle(cornerRadius: 12)
+                                        .stroke(Color.tmGold.opacity(0.25), lineWidth: 1))
                                     .foregroundColor(.white)
                                     .textContentType(.password)
                             }
-                            
+
                             // Forgot Password
                             Button(action: {}) {
                                 Text("Forgot Password?")
@@ -153,51 +169,19 @@ struct LoginView: View {
                                     .foregroundColor(.tmGold)
                             }
                             .frame(maxWidth: .infinity, alignment: .trailing)
-                            
+
                             // Login Button
                             Button(action: handleLogin) {
-                                Text("LOGIN")
-                                    .font(.system(size: 14, weight: .heavy))
+                                Text("LOGIN WITH EMAIL")
+                                    .font(.system(size: 15, weight: .heavy)).tracking(0.5)
                                     .foregroundColor(.black)
                                     .frame(maxWidth: .infinity)
-                                    .frame(height: 50)
+                                    .frame(height: 54)
                                     .background(
-                                        RoundedRectangle(cornerRadius: 25)
+                                        RoundedRectangle(cornerRadius: 27)
                                             .fill(Color.tmGold)
                                     )
-                            }
-                            .padding(.top, 8)
-                            
-                            // Divider
-                            HStack {
-                                Rectangle()
-                                    .fill(Color.white.opacity(0.2))
-                                    .frame(height: 1)
-                                
-                                Text("OR")
-                                    .font(.caption)
-                                    .foregroundColor(.white.opacity(0.5))
-                                    .padding(.horizontal, 12)
-                                
-                                Rectangle()
-                                    .fill(Color.white.opacity(0.2))
-                                    .frame(height: 1)
-                            }
-                            .padding(.vertical, 12)
-                            
-                            // Sign Up Button
-                            Button(action: {
-                                showingSignup = true
-                            }) {
-                                Text("CREATE NEW ACCOUNT")
-                                    .font(.system(size: 14, weight: .heavy))
-                                    .foregroundColor(.white)
-                                    .frame(maxWidth: .infinity)
-                                    .frame(height: 50)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 25)
-                                            .stroke(Color.tmGold, lineWidth: 2)
-                                    )
+                                    .shadow(color: .tmGold.opacity(0.45), radius: 12, x: 0, y: 6)
                             }
                         }
                         .padding(24)
@@ -230,6 +214,15 @@ struct LoginView: View {
                     .environmentObject(authManager)
             }
         }
+        .sheet(isPresented: $showingAppleSetup) {
+            AppleSignInSetupView(
+                userId:    appleUserId,
+                email:     appleEmail,
+                firstName: appleFirstName,
+                lastName:  appleLastName,
+                role:      isTrainerLogin ? .trainer : .client
+            )
+        }
         .onChange(of: authManager.isAuthenticated) { newValue in
             // When authentication changes, dismiss any signup sheet
             if newValue {
@@ -239,6 +232,42 @@ struct LoginView: View {
         }
     }
     
+    private func handleAppleSignIn(result: Result<ASAuthorization, Error>) {
+        switch result {
+        case .success(let auth):
+            guard let credential = auth.credential as? ASAuthorizationAppleIDCredential else { return }
+            let userId    = credential.user
+            let email     = credential.email ?? "\(userId)@privaterelay.appleid.com"
+            let firstName = credential.fullName?.givenName ?? ""
+            let lastName  = credential.fullName?.familyName ?? ""
+            let role: UserRole = isTrainerLogin ? .trainer : .client
+
+            // Check if this is a new Apple user
+            let isNewTrainer = role == .trainer &&
+                !authManager.getAllTrainers().contains(where: { $0.id == userId })
+            let isNewClient  = role == .client &&
+                !authManager.getAllClients().contains(where: { $0.id == userId })
+
+            if isNewTrainer || isNewClient {
+                // New user — show setup flow
+                appleUserId    = userId
+                appleEmail     = email
+                appleFirstName = firstName
+                appleLastName  = lastName
+                showingAppleSetup = true
+            } else {
+                // Returning user — log straight in
+                authManager.loginOrRegisterWithApple(
+                    userId: userId, email: email,
+                    firstName: firstName, lastName: lastName, role: role
+                )
+            }
+        case .failure(let error):
+            errorMessage = error.localizedDescription
+            showingError = true
+        }
+    }
+
     private func handleLogin() {
         showingError = false
         
@@ -264,8 +293,8 @@ struct LoginView: View {
     @ViewBuilder
     private func destinationView() -> some View {
         if authManager.currentUserRole == .trainer {
-            // TRAINER → Dashboard
-            TrainerDashboard()
+            // TRAINER → Profile/Dashboard (TrainerProfileMySpaceView)
+            TrainerDashboardView_Wrapper()
                 .environmentObject(authManager)
         } else {
             // CLIENT → Profile
@@ -276,6 +305,41 @@ struct LoginView: View {
                 Text("Error loading profile")
                     .foregroundColor(.white)
             }
+        }
+    }
+}
+
+// MARK: - Trainer Dashboard Wrapper
+
+struct TrainerDashboardView_Wrapper: View {
+    @EnvironmentObject var authManager: AuthManager
+
+    var body: some View {
+        if let saved = authManager.currentTrainerProfile {
+            let profile = TrainerProfile(
+                id: saved.id,
+                userId: saved.id,
+                businessName: saved.businessName ?? saved.fullName,
+                bio: saved.bio.isEmpty ? nil : saved.bio,
+                specialties: saved.specialties,
+                certifications: saved.certifications.map { $0.rawValue },
+                yearsOfExperience: saved.yearsOfExperience,
+                serviceTypes: saved.serviceTypes,
+                location: TrainerLocation(city: saved.city, state: saved.state),
+                hourlyRate: saved.hourlyRate,
+                profileImageURL: nil,
+                websiteURL: nil,
+                instagramHandle: nil,
+                isVerified: false,
+                rating: 5.0,
+                totalReviews: 0
+            )
+            TrainerProfileMySpaceView(trainer: profile)
+                .environmentObject(authManager)
+        } else {
+            Text("Loading profile...")
+                .foregroundColor(.white)
+                .onAppear { authManager.loadSession() }
         }
     }
 }

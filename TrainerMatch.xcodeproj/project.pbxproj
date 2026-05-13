@@ -6,6 +6,12 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		99110B612FA1C256004578D6 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 99110B602FA1C256004578D6 /* Supabase */; };
+		99110C1F2FA84BC2004578D6 /* OneSignalFramework in Frameworks */ = {isa = PBXBuildFile; productRef = 99110C1E2FA84BC2004578D6 /* OneSignalFramework */; };
+		99501EA62F989F4D00939A52 /* StripePaymentSheet in Frameworks */ = {isa = PBXBuildFile; productRef = 99501EA52F989F4D00939A52 /* StripePaymentSheet */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		99242EBC2F3C176500AC6258 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -65,6 +71,9 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				99110B612FA1C256004578D6 /* Supabase in Frameworks */,
+				99110C1F2FA84BC2004578D6 /* OneSignalFramework in Frameworks */,
+				99501EA62F989F4D00939A52 /* StripePaymentSheet in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -85,12 +94,20 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		99110B5F2FA1C256004578D6 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		99242EA52F3C176400AC6258 = {
 			isa = PBXGroup;
 			children = (
 				99242EB02F3C176400AC6258 /* TrainerMatch */,
 				99242EBE2F3C176500AC6258 /* TrainerMatchTests */,
 				99242EC82F3C176500AC6258 /* TrainerMatchUITests */,
+				99110B5F2FA1C256004578D6 /* Frameworks */,
 				99242EAF2F3C176400AC6258 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -125,6 +142,9 @@
 			);
 			name = TrainerMatch;
 			packageProductDependencies = (
+				99501EA52F989F4D00939A52 /* StripePaymentSheet */,
+				99110B602FA1C256004578D6 /* Supabase */,
+				99110C1E2FA84BC2004578D6 /* OneSignalFramework */,
 			);
 			productName = TrainerMatch;
 			productReference = 99242EAE2F3C176400AC6258 /* TrainerMatch.app */;
@@ -208,6 +228,11 @@
 			);
 			mainGroup = 99242EA52F3C176400AC6258;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				99501EA42F989F4D00939A52 /* XCRemoteSwiftPackageReference "stripe-ios" */,
+				99110B552FA1BC8D004578D6 /* XCRemoteSwiftPackageReference "supabase-swift" */,
+				99110C1D2FA8496A004578D6 /* XCRemoteSwiftPackageReference "OneSignal-iOS-SDK" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 99242EAF2F3C176400AC6258 /* Products */;
 			projectDirPath = "";
@@ -406,12 +431,15 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = TrainerMatch/TrainerMatch.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = MF4P9N93VF;
+				DEVELOPMENT_TEAM = 8Y7Q88S8AY;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = TrainerMatch/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Trainer Match";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.healthcare-fitness";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Camera access required to take live photos for profiles and progress updates";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "TrainerMatch needs access to read your step count and distance data to track your daily fitness progress and display your activity in the health dashboard.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "TrainerMatch needs access to update your health data to log workouts and fitness activities.";
@@ -431,8 +459,12 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "-08.TrainerMatch";
+				PRODUCT_BUNDLE_IDENTIFIER = com.hayesenterprise.TrainerMatch;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -444,12 +476,15 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = TrainerMatch/TrainerMatch.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = MF4P9N93VF;
+				DEVELOPMENT_TEAM = 8Y7Q88S8AY;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = TrainerMatch/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Trainer Match";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.healthcare-fitness";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Camera access required to take live photos for profiles and progress updates";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "TrainerMatch needs access to read your step count and distance data to track your daily fitness progress and display your activity in the health dashboard.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "TrainerMatch needs access to update your health data to log workouts and fitness activities.";
@@ -469,8 +504,12 @@
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = "-08.TrainerMatch";
+				PRODUCT_BUNDLE_IDENTIFIER = com.hayesenterprise.TrainerMatch;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -585,6 +624,51 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		99110B552FA1BC8D004578D6 /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/supabase/supabase-swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.5.1;
+			};
+		};
+		99110C1D2FA8496A004578D6 /* XCRemoteSwiftPackageReference "OneSignal-iOS-SDK" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/OneSignal/OneSignal-iOS-SDK.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 5.5.1;
+			};
+		};
+		99501EA42F989F4D00939A52 /* XCRemoteSwiftPackageReference "stripe-ios" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/stripe/stripe-ios";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 25.11.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		99110B602FA1C256004578D6 /* Supabase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 99110B552FA1BC8D004578D6 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Supabase;
+		};
+		99110C1E2FA84BC2004578D6 /* OneSignalFramework */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 99110C1D2FA8496A004578D6 /* XCRemoteSwiftPackageReference "OneSignal-iOS-SDK" */;
+			productName = OneSignalFramework;
+		};
+		99501EA52F989F4D00939A52 /* StripePaymentSheet */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 99501EA42F989F4D00939A52 /* XCRemoteSwiftPackageReference "stripe-ios" */;
+			productName = StripePaymentSheet;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 99242EA62F3C176400AC6258 /* Project object */;
 }

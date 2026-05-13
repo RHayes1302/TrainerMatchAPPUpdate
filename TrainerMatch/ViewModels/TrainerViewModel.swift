@@ -15,18 +15,19 @@ class TrainerViewModel: ObservableObject {
     @Published var workouts: [Workout] = []
     @Published var progressEntries: [ProgressEntry] = []
     @Published var currentUserRole: UserRole = .trainer
-    @Published var currentTrainerId: String = "trainer1" // In real app, this comes from auth
+    @Published var currentTrainerId: String = AuthManager.shared.currentUserId ?? ""
     
     // MARK: - Initialization
     init() {
-        loadSampleData()
+        loadPersistedData()
     }
-    
-    // MARK: - Load Sample Data (Replace with real data fetching later)
-    private func loadSampleData() {
-        self.clients = Client.sampleClients
-        self.workouts = Workout.sampleWorkouts
-        self.progressEntries = ProgressEntry.sampleEntries
+
+    // MARK: - Load persisted data
+    private func loadPersistedData() {
+        // Clients are added manually by the trainer — no fake data
+        self.clients = []
+        self.workouts = []
+        self.progressEntries = []
     }
     
     // MARK: - Client Management

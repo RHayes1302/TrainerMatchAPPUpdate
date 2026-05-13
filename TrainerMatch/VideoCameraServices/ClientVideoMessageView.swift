@@ -192,24 +192,35 @@ struct VideoMessageCard: View {
                             .cornerRadius(12)
                     }
                     
-                    // New badge
-                    if message.isNew {
-                        VStack {
-                            HStack {
+                    // Status badges
+                    VStack {
+                        HStack {
+                            if message.isNew {
                                 Text("NEW")
-                                    .font(.caption2)
-                                    .fontWeight(.bold)
+                                    .font(.caption2).fontWeight(.bold)
                                     .foregroundColor(.black)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 4)
-                                    .background(Color.tmGold)
-                                    .cornerRadius(8)
-                                Spacer()
+                                    .padding(.horizontal, 10).padding(.vertical, 4)
+                                    .background(Color.tmGold).cornerRadius(8)
+                            }
+                            if message.uploadStatus == .uploading {
+                                HStack(spacing: 4) {
+                                    ProgressView().tint(.white).scaleEffect(0.6)
+                                    Text("Uploading")
+                                        .font(.caption2).foregroundColor(.white)
+                                }
+                                .padding(.horizontal, 8).padding(.vertical, 4)
+                                .background(Color.black.opacity(0.6)).cornerRadius(8)
+                            } else if message.uploadStatus == .failed {
+                                Text("⚠️ Upload failed")
+                                    .font(.caption2).foregroundColor(.orange)
+                                    .padding(.horizontal, 8).padding(.vertical, 4)
+                                    .background(Color.black.opacity(0.6)).cornerRadius(8)
                             }
                             Spacer()
                         }
-                        .padding(12)
+                        Spacer()
                     }
+                    .padding(12)
                 }
                 
                 // Message info
@@ -269,87 +280,132 @@ struct VideoMessageCard: View {
 struct VideoMessagePlayerView: View {
     let message: VideoMessage
     let onClose: () -> Void
-    
-    @State private var player: AVPlayer?
-    
+
+    // Initialise the player immediately so VideoPlayer has it on first render
+    @StateObject private var playerHolder = VideoPlayerHolder()
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            
             VStack(spacing: 0) {
-                // Header
+
+                // Close button row
                 HStack {
-                    Button(action: onClose) {
+                    Button(action: {
+                        playerHolder.player.pause()
+                        onClose()
+                    }) {
                         Image(systemName: "xmark")
-                            .font(.title3)
+                            .font(.title3).fontWeight(.semibold)
                             .foregroundColor(.white)
-                            .padding()
-                            .background(Color.black.opacity(0.5))
-                            .clipShape(Circle())
+                            .padding(10)
+                            .background(Circle().fill(Color.black.opacity(0.6)))
                     }
                     Spacer()
-                }
-                .padding()
-                
-                // Video player
-                if let player = player {
-                    VideoPlayer(player: player)
-                        .onAppear {
-                            player.play()
+                    // Upload status indicator
+                    if message.uploadStatus == .uploading {
+                        HStack(spacing: 6) {
+                            ProgressView().tint(.tmGold).scaleEffect(0.7)
+                            Text("Uploading...").font(.caption).foregroundColor(.tmGold)
                         }
-                }
-                
-                // Message details
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack {
-                        Image(systemName: iconForMessageType(message.messageType))
-                            .foregroundColor(.tmGold)
-                        Text(message.messageType.rawValue)
-                            .font(.subheadline)
-                            .foregroundColor(.tmGold)
-                        Spacer()
-                        Text(message.formattedDate)
-                            .font(.caption)
-                            .foregroundColor(.white.opacity(0.6))
+                        .padding(.horizontal, 10).padding(.vertical, 6)
+                        .background(Capsule().fill(Color.black.opacity(0.6)))
+                    } else if message.uploadStatus == .failed {
+                        Text("⚠️ Upload failed")
+                            .font(.caption).foregroundColor(.orange)
+                            .padding(.horizontal, 10).padding(.vertical, 6)
+                            .background(Capsule().fill(Color.black.opacity(0.6)))
                     }
-                    
-                    Text(message.title)
-                        .font(.title2)
-                        .fontWeight(.bold)
+                    // Duration badge
+                    Text(message.formattedDuration)
+                        .font(.caption).fontWeight(.bold)
                         .foregroundColor(.white)
-                    
-                    Text(message.message)
-                        .font(.body)
-                        .foregroundColor(.white.opacity(0.8))
+                        .padding(.horizontal, 12).padding(.vertical, 6)
+                        .background(Capsule().fill(Color.black.opacity(0.6)))
                 }
-                .padding()
-                .background(Color.white.opacity(0.05))
+                .padding(16)
+
+                // ── Video Player ──
+                VideoPlayer(player: playerHolder.player)
+                    .frame(maxWidth: .infinity)
+                    .aspectRatio(9/16, contentMode: .fit)
+                    .background(Color.black)
+                    .onAppear {
+                        if message.playbackURL != nil {
+                            playerHolder.player.play()
+                        }
+                    }
+
+                // No playback URL warning
+                if message.playbackURL == nil {
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.orange)
+                        Text(message.uploadStatus == .uploading
+                             ? "Video is uploading — available soon."
+                             : "Video not yet available on this device.")
+                            .font(.caption).foregroundColor(.white.opacity(0.6))
+                    }
+                    .padding(12)
+                    .background(RoundedRectangle(cornerRadius: 10).fill(Color.orange.opacity(0.1)))
+                    .padding(.horizontal)
+                }
+
+                // Message details
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Image(systemName: iconForMessageType(message.messageType))
+                                .foregroundColor(.tmGold).font(.caption)
+                            Text(message.messageType.rawValue)
+                                .font(.caption).fontWeight(.semibold).foregroundColor(.tmGold)
+                            Spacer()
+                            Text(message.formattedDate)
+                                .font(.caption2).foregroundColor(.white.opacity(0.5))
+                        }
+                        Text(message.title)
+                            .font(.title3).fontWeight(.bold).foregroundColor(.white)
+                        if !message.message.isEmpty {
+                            Text(message.message)
+                                .font(.subheadline).foregroundColor(.white.opacity(0.75))
+                        }
+                    }
+                    .padding(16)
+                }
+                .background(Color.white.opacity(0.04))
             }
         }
         .onAppear {
-            player = AVPlayer(url: message.videoURL)
+            if let url = message.playbackURL {
+                playerHolder.player.replaceCurrentItem(with: AVPlayerItem(url: url))
+            }
         }
         .onDisappear {
-            player?.pause()
+            playerHolder.player.pause()
         }
     }
-    
+
     private func iconForMessageType(_ type: VideoMessage.MessageType) -> String {
         switch type {
-        case .progressFeedback: return "chart.line.uptrend.xyaxis"
-        case .workoutInstructions: return "figure.strengthtraining.traditional"
-        case .motivational: return "flame.fill"
-        case .checkIn: return "checkmark.circle.fill"
-        case .formCorrection: return "eye.fill"
-        case .general: return "message.fill"
+        case .progressFeedback:     return "chart.line.uptrend.xyaxis"
+        case .workoutInstructions:  return "figure.strengthtraining.traditional"
+        case .motivational:         return "flame.fill"
+        case .checkIn:              return "checkmark.circle.fill"
+        case .formCorrection:       return "eye.fill"
+        case .general:              return "message.fill"
         }
     }
+}
+
+/// Holds an AVPlayer that is created immediately (non-optional),
+/// so VideoPlayer always has a valid player on first render.
+final class VideoPlayerHolder: ObservableObject {
+    let player = AVPlayer()
 }
 
 #Preview {
     NavigationView {
         ClientVideoMessagesView(
-            viewModel: VideoMessageViewModel(),
+            viewModel: VideoMessageViewModel.shared,
             clientId: "client1",
             clientName: "John Doe"
         )

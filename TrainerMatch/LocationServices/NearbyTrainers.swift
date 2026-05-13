@@ -2,290 +2,339 @@
 //  NearbyTrainers.swift
 //  TrainerMatch
 //
-//  Created by Ramone Hayes on 2/11/26.
-//
 
 import SwiftUI
-import CoreLocation
 
 struct NearbyTrainersView: View {
     @Environment(\.dismiss) var dismiss
     @StateObject private var locationManager = LocationManager()
-    @State private var isSearching = true
-    
-    // Sample IN-PERSON ONLY trainers - in production, fetch from backend filtered by serviceType = .inPerson
-    let nearbyTrainers = [
-        (name: "Cesarina Jones", specialty: "Pilates", serviceType: "In-Person", distance: 2.3, rating: 4.9, image: "figure.yoga"),
-        (name: "Mario Kutz", specialty: "Pilates", serviceType: "In-Person", distance: 3.1, rating: 4.8, image: "figure.mind.and.body"),
-        (name: "Jayke Fizer", specialty: "Bodybuilding", serviceType: "In-Person", distance: 5.8, rating: 4.7, image: "figure.strengthtraining.traditional"),
-        (name: "Mike Rodriguez", specialty: "CrossFit", serviceType: "In-Person", distance: 6.5, rating: 4.9, image: "figure.highintensity.intervaltraining"),
-        (name: "Jessica Moore", specialty: "HIIT", serviceType: "In-Person", distance: 8.1, rating: 4.8, image: "figure.core.training"),
-        (name: "Alex Thompson", specialty: "Strength Training", serviceType: "In-Person", distance: 12.4, rating: 4.9, image: "figure.strengthtraining.traditional"),
-        (name: "Emily Davis", specialty: "Yoga", serviceType: "In-Person", distance: 15.7, rating: 5.0, image: "figure.yoga"),
-        (name: "Chris Martinez", specialty: "Boxing", serviceType: "In-Person", distance: 18.2, rating: 4.8, image: "figure.boxing"),
-        (name: "Nicole Brown", specialty: "Zumba", serviceType: "In-Person", distance: 22.5, rating: 4.9, image: "figure.dance"),
-        (name: "David Wilson", specialty: "Running", serviceType: "In-Person", distance: 28.3, rating: 4.7, image: "figure.run"),
-        (name: "Rachel Green", specialty: "Spin", serviceType: "In-Person", distance: 35.6, rating: 4.8, image: "figure.indoor.cycle"),
-        (name: "Tom Anderson", specialty: "Boot Camp", serviceType: "In-Person", distance: 42.1, rating: 4.9, image: "figure.outdoor.cycle"),
-        (name: "Lisa White", specialty: "Nutrition", serviceType: "In-Person", distance: 47.8, rating: 5.0, image: "figure.core.training")
-    ]
-    
-    var body: some View {
-        NavigationView {
-            ZStack {
-                Color.black.ignoresSafeArea()
-                
-                if isSearching {
-                    // Loading State
-                    VStack(spacing: 24) {
-                        TrainerMatchLogo(size: .large)
-                            .shadow(color: .tmGold.opacity(0.3), radius: 20, x: 0, y: 10)
-                        
-                        VStack(spacing: 12) {
-                            ProgressView()
-                                .tint(.tmGold)
-                                .scaleEffect(1.5)
-                            
-                            Text("Finding in-person trainers...")
-                                .font(.headline)
-                                .foregroundColor(.white)
-                            
-                            if !locationManager.city.isEmpty {
-                                Text("\(locationManager.city), \(locationManager.state)")
-                                    .font(.subheadline)
-                                    .foregroundColor(.tmGold)
-                            }
-                        }
-                        .padding(.top, 20)
-                    }
-                } else {
-                    // Results
-                    ScrollView {
-                        VStack(spacing: 20) {
-                            // Header
-                            VStack(spacing: 16) {
-                                TrainerMatchLogo(size: .medium)
-                                    .shadow(color: .tmGold.opacity(0.3), radius: 15, x: 0, y: 5)
-                                
-                                Text("In-Person Trainers")
-                                    .font(.title2)
-                                    .fontWeight(.bold)
-                                    .foregroundColor(.white)
-                                
-                                if !locationManager.city.isEmpty {
-                                    HStack(spacing: 8) {
-                                        Image(systemName: "mappin.circle.fill")
-                                            .foregroundColor(.tmGold)
-                                        Text("\(locationManager.city), \(locationManager.state)")
-                                            .font(.subheadline)
-                                            .foregroundColor(.white)
-                                        
-                                        Text("•")
-                                            .foregroundColor(.white.opacity(0.5))
-                                        
-                                        Text("\(nearbyTrainers.count) available")
-                                            .font(.subheadline)
-                                            .foregroundColor(.white.opacity(0.7))
-                                    }
-                                }
-                                
-                                // In-Person Badge
-                                HStack {
-                                    Image(systemName: "person.2.fill")
-                                        .font(.caption)
-                                        .foregroundColor(.tmGold)
-                                    Text("In-Person Training Only")
-                                        .font(.caption)
-                                        .fontWeight(.semibold)
-                                        .foregroundColor(.tmGold)
-                                }
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 6)
-                                .background(
-                                    Capsule()
-                                        .fill(Color.tmGold.opacity(0.2))
-                                        .overlay(
-                                            Capsule()
-                                                .stroke(Color.tmGold, lineWidth: 1)
-                                        )
-                                )
-                            }
-                            .padding(.top, 20)
-                            
-                            // Quick Stats
-                            HStack(spacing: 12) {
-                                QuickStatCard(icon: "person.2.fill", label: "In-Person", color: .tmGold)
-                                QuickStatCard(icon: "mappin.circle.fill", label: "Within 50 mi", color: .tmGold)
-                                QuickStatCard(icon: "star.fill", label: "Top Rated", color: .tmGold)
-                            }
-                            .padding(.horizontal)
-                            
-                            // Trainer Cards
-                            LazyVStack(spacing: 16) {
-                                ForEach(nearbyTrainers.indices, id: \.self) { index in
-                                    NearbyTrainerCard(trainer: nearbyTrainers[index])
-                                }
-                            }
-                            .padding(.horizontal)
-                            
-                            // Advanced Search Button
-                            NavigationLink(destination: LocationBasedSearchView()) {
-                                HStack {
-                                    Image(systemName: "slider.horizontal.3")
-                                    Text("ADVANCED SEARCH")
-                                }
-                                .font(.system(size: 14, weight: .heavy))
-                                .foregroundColor(.black)
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 50)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 25)
-                                        .fill(Color.tmGold)
-                                )
-                            }
-                            .padding(.horizontal)
-                            .padding(.top, 8)
-                            .padding(.bottom, 40)
-                        }
-                    }
-                }
-            }
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button(action: { dismiss() }) {
-                        HStack(spacing: 4) {
-                            Image(systemName: "chevron.left")
-                            Text("Back")
-                        }
-                        .foregroundColor(.tmGold)
-                    }
-                }
-            }
-            .toolbarBackground(Color.black, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
-        }
-        .onAppear {
-            locationManager.requestLocation()
-            // Simulate search delay
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                withAnimation {
-                    isSearching = false
-                }
-            }
-        }
-    }
-}
+    @State private var searchText = ""
+    @State private var selectedType: ServiceType? = nil
+    @State private var trainers: [TrainerRow] = []
+    @State private var isLoading = false
 
-// MARK: - Quick Stat Card
-struct QuickStatCard: View {
-    let icon: String
-    let label: String
-    let color: Color
-    
     var body: some View {
-        VStack(spacing: 6) {
-            Image(systemName: icon)
-                .font(.title3)
-                .foregroundColor(color)
-            
-            Text(label)
-                .font(.caption)
+        ZStack {
+            Color.black.ignoresSafeArea()
+            VStack(spacing: 0) {
+                searchBar
+                filterBar
+                Divider().background(Color.white.opacity(0.08))
+                if isLoading {
+                    Spacer()
+                    ProgressView().tint(.tmGold).scaleEffect(1.3)
+                    Spacer()
+                } else {
+                    resultsList
+                }
+            }
+        }
+        .navigationTitle("Trainers Nearby")
+        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarBackButtonHidden(true)
+        .toolbarBackground(Color.black, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button(action: { dismiss() }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                        Text("Back")
+                    }
+                    .foregroundColor(.tmGold)
+                }
+            }
+        }
+        .task { await loadTrainers() }
+        .onAppear { locationManager.requestLocation() }
+    }
+
+    private func loadTrainers() async {
+        isLoading = true
+        trainers = (try? await SupabaseAuthManager.shared.fetchAllTrainers()) ?? []
+        isLoading = false
+    }
+
+    private var searchBar: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "magnifyingglass").foregroundColor(.white.opacity(0.4))
+            TextField("Search trainers or specialties...", text: $searchText)
                 .foregroundColor(.white)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color.white.opacity(0.1))
-        )
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.07)))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.tmGold.opacity(0.2), lineWidth: 1))
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+        .padding(.bottom, 8)
     }
-}
 
-// MARK: - Nearby Trainer Card
-struct NearbyTrainerCard: View {
-    let trainer: (name: String, specialty: String, serviceType: String, distance: Double, rating: Double, image: String)
-    
-    var body: some View {
-        HStack(spacing: 16) {
-            // Profile Image
-            ZStack {
-                Circle()
-                    .fill(
-                        LinearGradient(
-                            colors: [Color.gray.opacity(0.4), Color.gray.opacity(0.6)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                    .frame(width: 70, height: 70)
-                
-                Image(systemName: trainer.image)
-                    .font(.title2)
-                    .foregroundColor(.white)
+    private var filterBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                filterChip("All",       selected: selectedType == nil)       { selectedType = nil }
+                filterChip("In-Person", selected: selectedType == .inPerson) { selectedType = .inPerson }
+                filterChip("Online",    selected: selectedType == .online)   { selectedType = .online }
+                filterChip("Both",      selected: selectedType == .both)     { selectedType = .both }
             }
-            
-            // Info
-            VStack(alignment: .leading, spacing: 6) {
-                Text(trainer.name)
-                    .font(.headline)
-                    .foregroundColor(.white)
-                
-                Text(trainer.specialty)
-                    .font(.subheadline)
-                    .foregroundColor(.white.opacity(0.7))
-                
-                HStack(spacing: 12) {
-                    // Distance
-                    HStack(spacing: 4) {
-                        Image(systemName: "mappin.circle.fill")
-                            .font(.caption)
-                            .foregroundColor(.tmGold)
-                        Text(String(format: "%.1f mi", trainer.distance))
-                            .font(.caption)
-                            .foregroundColor(.tmGold)
-                    }
-                    
-                    // Rating
-                    HStack(spacing: 4) {
-                        Image(systemName: "star.fill")
-                            .font(.caption)
-                            .foregroundColor(.tmGold)
-                        Text(String(format: "%.1f", trainer.rating))
-                            .font(.caption)
-                            .foregroundColor(.white)
+            .padding(.horizontal, 16)
+        }
+        .padding(.bottom, 10)
+    }
+
+    private var resultsList: some View {
+        let filtered = filteredTrainers()
+        return Group {
+            if filtered.isEmpty {
+                emptyState
+            } else {
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 0) {
+                        GymAdBannerView()
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                        Divider()
+                            .background(Color.white.opacity(0.08))
+                            .padding(.horizontal, 16)
+                        trainerGridRows(trainers: filtered)
                     }
                 }
             }
-            
-            Spacer()
-            
-            // View Button
-            Button(action: {}) {
-                Image(systemName: "chevron.right")
-                    .font(.caption)
-                    .fontWeight(.bold)
-                    .foregroundColor(.tmGold)
-                    .padding(12)
-                    .background(
-                        Circle()
-                            .fill(Color.white.opacity(0.1))
-                    )
-            }
         }
-        .padding()
-        .background(
-            RoundedRectangle(cornerRadius: 15)
-                .fill(Color.white.opacity(0.05))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 15)
-                .stroke(Color.white.opacity(0.1), lineWidth: 1)
-        )
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 16) {
+            GymAdBannerView().padding(.horizontal, 16).padding(.top, 10)
+            Image(systemName: "person.2.slash")
+                .font(.system(size: 52)).foregroundColor(.white.opacity(0.1)).padding(.top, 40)
+            Text("No trainers found").font(.title3).foregroundColor(.white.opacity(0.4))
+            Text("Try a different search or filter.").font(.subheadline).foregroundColor(.white.opacity(0.25))
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func filteredTrainers() -> [TrainerRow] {
+        trainers.filter { trainer in
+            if !searchText.isEmpty {
+                let q = searchText.lowercased()
+                let nameMatch = trainer.fullName.lowercased().contains(q)
+                let bizMatch  = (trainer.businessName ?? "").lowercased().contains(q)
+                let specMatch = trainer.specialties.contains { $0.lowercased().contains(q) }
+                if !nameMatch && !bizMatch && !specMatch { return false }
+            }
+            if let type = selectedType {
+                if !trainer.serviceTypes.contains(type.rawValue) &&
+                   !trainer.serviceTypes.contains("Both") { return false }
+            }
+            return true
+        }
+    }
+
+    private func filterChip(_ label: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label)
+                .font(.system(size: 12, weight: .bold))
+                .foregroundColor(selected ? .black : .white.opacity(0.5))
+                .padding(.horizontal, 14).padding(.vertical, 8)
+                .background(Capsule().fill(selected ? Color.tmGold : Color.white.opacity(0.08)))
+        }
     }
 }
 
-#Preview {
-    NearbyTrainersView()
+// MARK: - Trainer Grid
+
+private struct trainerGridRows: View {
+    let trainers: [TrainerRow]
+    let columns = [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("\(trainers.count) TRAINER\(trainers.count == 1 ? "" : "S")")
+                .font(.system(size: 10, weight: .black)).tracking(1.5)
+                .foregroundColor(.tmGold)
+                .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 8)
+
+            LazyVGrid(columns: columns, spacing: 12) {
+                ForEach(trainers) { trainer in
+                    NavigationLink(destination: SupabaseTrainerPublicProfileView(trainer: trainer)) {
+                        SupabaseTrainerNearbyCard(trainer: trainer)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 16).padding(.bottom, 30)
+        }
+    }
+}
+
+// MARK: - Supabase Trainer Nearby Card
+
+struct SupabaseTrainerNearbyCard: View {
+    let trainer: TrainerRow
+    @State private var profileImage: UIImage? = nil
+
+    private var primarySpecialty: String {
+        trainer.specialties.first ?? "Personal Training"
+    }
+
+    private var serviceLabel: String {
+        trainer.serviceTypes.first ?? "In-Person"
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ZStack {
+                LinearGradient(
+                    colors: [Color.tmGold.opacity(0.25), Color.black],
+                    startPoint: .top, endPoint: .bottom)
+                .frame(height: 110)
+                VStack(spacing: 6) {
+                    ZStack {
+                        Circle()
+                            .fill(Color.tmGold.opacity(0.2))
+                            .frame(width: 60, height: 60)
+                            .overlay(Circle().stroke(Color.tmGold, lineWidth: 1.5))
+                        if let img = profileImage {
+                            Image(uiImage: img)
+                                .resizable().scaledToFill()
+                                .frame(width: 60, height: 60).clipShape(Circle())
+                        } else {
+                            Text(trainer.firstName.prefix(1).uppercased())
+                                .font(.system(size: 22, weight: .black)).foregroundColor(.tmGold)
+                        }
+                    }
+                    Text(serviceLabel)
+                        .font(.system(size: 8, weight: .bold)).foregroundColor(.black)
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(Capsule().fill(Color.tmGold))
+                }
+            }
+            .task {
+                if let urlStr = trainer.profileImageUrl,
+                   let url = URL(string: urlStr),
+                   let data = try? Data(contentsOf: url),
+                   let img = UIImage(data: data) {
+                    profileImage = img
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                // Business name + trainer name
+                if let biz = trainer.businessName, !biz.isEmpty {
+                    Text(biz)
+                        .font(.system(size: 13, weight: .bold)).foregroundColor(.white).lineLimit(1)
+                    Text(trainer.fullName)
+                        .font(.system(size: 10)).foregroundColor(.white.opacity(0.5)).lineLimit(1)
+                } else {
+                    Text(trainer.fullName)
+                        .font(.system(size: 13, weight: .bold)).foregroundColor(.white).lineLimit(1)
+                }
+                Text(primarySpecialty.uppercased())
+                    .font(.system(size: 9, weight: .black)).tracking(0.5)
+                    .foregroundColor(.tmGold).lineLimit(1)
+                if !trainer.city.isEmpty {
+                    Label(trainer.city, systemImage: "mappin.circle.fill")
+                        .font(.system(size: 9)).foregroundColor(.white.opacity(0.35)).lineLimit(1)
+                }
+                if let rate = trainer.hourlyRate {
+                    Text(String(format: "$%.0f/hr", rate))
+                        .font(.system(size: 11, weight: .bold)).foregroundColor(.tmGold)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(10)
+            .background(Color.white.opacity(0.04))
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.tmGold.opacity(0.2), lineWidth: 1))
+    }
+}
+
+// MARK: - Keep old card for backward compat
+struct TrainerNearbyCard: View {
+    let trainer: SavedTrainerProfile
+    @State private var profileImage: UIImage? = nil
+
+    private var primarySpecialty: String {
+        trainer.specialties.first?.rawValue ?? "Personal Training"
+    }
+    private var initials: String {
+        "\(trainer.firstName.prefix(1))\(trainer.lastName.prefix(1))".uppercased()
+    }
+    private var serviceLabel: String {
+        trainer.serviceTypes.first?.rawValue ?? "In-Person"
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ZStack {
+                LinearGradient(colors: [Color.tmGold.opacity(0.25), Color.black],
+                               startPoint: .top, endPoint: .bottom).frame(height: 110)
+                VStack(spacing: 6) {
+                    ZStack {
+                        Circle().fill(Color.tmGold.opacity(0.2)).frame(width: 60, height: 60)
+                            .overlay(Circle().stroke(Color.tmGold, lineWidth: 1.5))
+                        if let img = profileImage {
+                            Image(uiImage: img).resizable().scaledToFill()
+                                .frame(width: 60, height: 60).clipShape(Circle())
+                        } else {
+                            Text(initials).font(.system(size: 22, weight: .black)).foregroundColor(.tmGold)
+                        }
+                    }
+                    Text(serviceLabel).font(.system(size: 8, weight: .bold)).foregroundColor(.black)
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(Capsule().fill(Color.tmGold))
+                }
+            }
+            .onAppear {
+                profileImage = ProfileImageManager.shared.loadImage(
+                    forKey: ProfileImageManager.profileImageKey(for: trainer.id))
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text(trainer.businessName ?? trainer.fullName)
+                    .font(.system(size: 13, weight: .bold)).foregroundColor(.white).lineLimit(1)
+                if trainer.businessName != nil {
+                    Text(trainer.fullName)
+                        .font(.system(size: 10)).foregroundColor(.white.opacity(0.5)).lineLimit(1)
+                }
+                Text(primarySpecialty.uppercased())
+                    .font(.system(size: 9, weight: .black)).tracking(0.5)
+                    .foregroundColor(.tmGold).lineLimit(1)
+                if !trainer.city.isEmpty {
+                    Label(trainer.city, systemImage: "mappin.circle.fill")
+                        .font(.system(size: 9)).foregroundColor(.white.opacity(0.35)).lineLimit(1)
+                }
+                if let rate = trainer.hourlyRate {
+                    Text(String(format: "$%.0f/hr", rate))
+                        .font(.system(size: 11, weight: .bold)).foregroundColor(.tmGold)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(10).background(Color.white.opacity(0.04))
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.tmGold.opacity(0.2), lineWidth: 1))
+    }
+}
+
+extension SavedTrainerProfile {
+    func toTrainerProfile() -> TrainerProfile {
+        TrainerProfile(
+            id: id, userId: id,
+            businessName: businessName ?? fullName,
+            bio: bio.isEmpty ? nil : bio,
+            specialties: specialties,
+            certifications: certifications.map { $0.rawValue },
+            yearsOfExperience: yearsOfExperience,
+            serviceTypes: serviceTypes,
+            location: TrainerLocation(city: city, state: state),
+            hourlyRate: hourlyRate,
+            profileImageURL: nil,
+            websiteURL: nil, instagramHandle: nil,
+            isVerified: false, rating: 5.0, totalReviews: 0
+        )
+    }
 }

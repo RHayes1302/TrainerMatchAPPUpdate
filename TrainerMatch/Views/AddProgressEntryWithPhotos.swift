@@ -2,18 +2,17 @@
 //  AddProgressEntryWithPhotos.swift
 //  TrainerMatch
 //
-//  Created by Ramone Hayes on 2/10/26.
+//  Updated to use real camera + photo library via ProgressPhotoPicker
 //
 
 import SwiftUI
 import PhotosUI
 
-// Extension to AddProgressEntryView with photo upload
 struct AddProgressEntryWithPhotosView: View {
     let client: Client
     @ObservedObject var trainerVM: TrainerViewModel
     @Environment(\.dismiss) var dismiss
-    
+
     @State private var entryDate = Date()
     @State private var weight = ""
     @State private var bodyFat = ""
@@ -23,176 +22,109 @@ struct AddProgressEntryWithPhotosView: View {
     @State private var thighs = ""
     @State private var arms = ""
     @State private var notes = ""
-    
-    // Progress Photos
-    @State private var selectedPhotos: [PhotosPickerItem] = []
     @State private var progressImages: [UIImage] = []
-    
+
     var body: some View {
         NavigationView {
-            Form {
-                Section(header: Text("Entry Details")) {
-                    DatePicker("Date", selection: $entryDate, displayedComponents: .date)
-                }
-                
-                Section(header: Text("Body Metrics")) {
-                    HStack {
-                        TextField("Weight", text: $weight)
-                            .keyboardType(.decimalPad)
-                        Text("kg")
-                            .foregroundColor(.gray)
-                    }
-                    
-                    HStack {
-                        TextField("Body Fat %", text: $bodyFat)
-                            .keyboardType(.decimalPad)
-                        Text("%")
-                            .foregroundColor(.gray)
-                    }
-                }
-                
-                Section(header: Text("Measurements (Optional)")) {
-                    HStack {
-                        TextField("Chest", text: $chest)
-                            .keyboardType(.decimalPad)
-                        Text("cm")
-                            .foregroundColor(.gray)
-                    }
-                    
-                    HStack {
-                        TextField("Waist", text: $waist)
-                            .keyboardType(.decimalPad)
-                        Text("cm")
-                            .foregroundColor(.gray)
-                    }
-                    
-                    HStack {
-                        TextField("Hips", text: $hips)
-                            .keyboardType(.decimalPad)
-                        Text("cm")
-                            .foregroundColor(.gray)
-                    }
-                    
-                    HStack {
-                        TextField("Thighs", text: $thighs)
-                            .keyboardType(.decimalPad)
-                        Text("cm")
-                            .foregroundColor(.gray)
-                    }
-                    
-                    HStack {
-                        TextField("Arms", text: $arms)
-                            .keyboardType(.decimalPad)
-                        Text("cm")
-                            .foregroundColor(.gray)
-                    }
-                }
-                
-                // Progress Photos Section
-                Section(header: Text("Progress Photos")) {
-                    PhotosPicker(
-                        selection: $selectedPhotos,
-                        maxSelectionCount: 4,
-                        matching: .images
-                    ) {
-                        HStack {
-                            Image(systemName: "photo.on.rectangle.angled")
-                                .font(.title2)
-                                .foregroundColor(.tmGold)
-                            
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Add Progress Photos")
-                                    .font(.headline)
-                                    .foregroundColor(.tmGold)
-                                
-                                Text("Select up to 4 photos")
-                                    .font(.caption)
-                                    .foregroundColor(.gray)
-                            }
-                            
-                            Spacer()
-                            
-                            if !progressImages.isEmpty {
-                                Text("\(progressImages.count)")
-                                    .font(.caption)
-                                    .foregroundColor(.white)
-                                    .padding(6)
-                                    .background(Circle().fill(Color.tmGold))
-                            }
+            ZStack {
+                Color.black.ignoresSafeArea()
+
+                ScrollView {
+                    VStack(spacing: 20) {
+
+                        // MARK: Entry Date
+                        SectionCard(title: "ENTRY DETAILS", icon: "calendar") {
+                            DatePicker("Date", selection: $entryDate, displayedComponents: .date)
+                                .colorScheme(.dark)
+                                .foregroundColor(.white)
                         }
-                        .padding(.vertical, 8)
-                    }
-                    
-                    // Display selected photos
-                    if !progressImages.isEmpty {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 12) {
-                                ForEach(progressImages.indices, id: \.self) { index in
-                                    ZStack(alignment: .topTrailing) {
-                                        Image(uiImage: progressImages[index])
-                                            .resizable()
-                                            .scaledToFill()
-                                            .frame(width: 120, height: 120)
-                                            .clipShape(RoundedRectangle(cornerRadius: 10))
-                                        
-                                        // Remove button
-                                        Button(action: {
-                                            progressImages.remove(at: index)
-                                            selectedPhotos.remove(at: index)
-                                        }) {
-                                            Image(systemName: "xmark.circle.fill")
-                                                .font(.title3)
-                                                .foregroundColor(.white)
-                                                .background(Circle().fill(Color.black.opacity(0.6)))
+
+                        // MARK: Progress Photos — NEW
+                        SectionCard(title: "PROGRESS PHOTOS", icon: "camera.fill") {
+                            ProgressPhotoPicker(images: $progressImages, maxCount: 4)
+                            Text("Tip: Same pose & lighting each session makes for the best comparison")
+                                .font(.caption)
+                                .foregroundColor(.white.opacity(0.45))
+                                .padding(.top, 4)
+                        }
+
+                        // MARK: Body Metrics
+                        SectionCard(title: "BODY METRICS", icon: "scalemass.fill") {
+                            MetricField(label: "Weight", unit: "lbs", text: $weight)
+                            Divider().background(Color.white.opacity(0.1))
+                            MetricField(label: "Body Fat", unit: "%", text: $bodyFat)
+                        }
+
+                        // MARK: Measurements
+                        SectionCard(title: "MEASUREMENTS (optional)", icon: "ruler.fill") {
+                            MetricField(label: "Chest", unit: "in", text: $chest)
+                            Divider().background(Color.white.opacity(0.1))
+                            MetricField(label: "Waist", unit: "in", text: $waist)
+                            Divider().background(Color.white.opacity(0.1))
+                            MetricField(label: "Hips", unit: "in", text: $hips)
+                            Divider().background(Color.white.opacity(0.1))
+                            MetricField(label: "Thighs", unit: "in", text: $thighs)
+                            Divider().background(Color.white.opacity(0.1))
+                            MetricField(label: "Arms", unit: "in", text: $arms)
+                        }
+
+                        // MARK: Notes
+                        SectionCard(title: "NOTES", icon: "note.text") {
+                            TextEditor(text: $notes)
+                                .frame(height: 100)
+                                .scrollContentBackground(.hidden)
+                                .background(Color.clear)
+                                .foregroundColor(.white)
+                                .overlay(
+                                    Group {
+                                        if notes.isEmpty {
+                                            Text("How is the client feeling? Any observations...")
+                                                .foregroundColor(.white.opacity(0.3))
+                                                .padding(.top, 8)
+                                                .padding(.leading, 4)
+                                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                                                .allowsHitTesting(false)
                                         }
-                                        .padding(8)
                                     }
-                                }
-                            }
-                            .padding(.vertical, 8)
+                                )
                         }
+
+                        // MARK: Save Button
+                        Button(action: saveProgressEntry) {
+                            HStack {
+                                Image(systemName: "checkmark.circle.fill")
+                                Text("SAVE PROGRESS ENTRY")
+                                    .font(.system(size: 15, weight: .heavy))
+                            }
+                            .foregroundColor(.black)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 54)
+                            .background(
+                                RoundedRectangle(cornerRadius: 27)
+                                    .fill(Color.tmGoldGradient())
+                            )
+                            .shadow(color: .tmGold.opacity(0.4), radius: 12, x: 0, y: 6)
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 40)
                     }
-                    
-                    Text("Tip: Take photos in good lighting, same pose and location for best comparison")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                        .padding(.top, 4)
-                }
-                
-                Section(header: Text("Notes")) {
-                    TextEditor(text: $notes)
-                        .frame(height: 100)
+                    .padding(.top, 16)
                 }
             }
             .navigationTitle("Add Progress Entry")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(Color.black, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                }
-                
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Save") {
-                        saveProgressEntry()
-                    }
-                }
-            }
-            .onChange(of: selectedPhotos) { newPhotos in
-                Task {
-                    progressImages = []
-                    for photo in newPhotos {
-                        if let data = try? await photo.loadTransferable(type: Data.self),
-                           let uiImage = UIImage(data: data) {
-                            progressImages.append(uiImage)
-                        }
-                    }
+                    Button("Cancel") { dismiss() }
+                        .foregroundColor(.tmGold)
                 }
             }
         }
     }
-    
+
     private func saveProgressEntry() {
         let measurements = BodyMeasurements(
             chest: Double(chest),
@@ -201,26 +133,99 @@ struct AddProgressEntryWithPhotosView: View {
             thighs: Double(thighs),
             arms: Double(arms)
         )
-        
         let hasAnyMeasurement = measurements.chest != nil || measurements.waist != nil ||
                                 measurements.hips != nil || measurements.thighs != nil ||
                                 measurements.arms != nil
-        
-        // In a real app, you'd upload images to server and get URLs
-        let photoURLs = progressImages.isEmpty ? nil : progressImages.indices.map { "photo_\($0).jpg" }
-        
+
+        let entryId = UUID().uuidString
+
+        // Save actual images to disk keyed by entryId + index
+        var photoKeys: [String]? = nil
+        if !progressImages.isEmpty {
+            photoKeys = progressImages.indices.map { idx in
+                let key = ProfileImageManager.progressPhotoKey(for: entryId, index: idx)
+                ProfileImageManager.shared.saveImage(progressImages[idx], forKey: key)
+                return key
+            }
+        }
+
         let entry = ProgressEntry(
+            id: entryId,
             clientId: client.id,
             date: entryDate,
             weight: Double(weight),
             bodyFat: Double(bodyFat),
             measurements: hasAnyMeasurement ? measurements : nil,
-            photoURLs: photoURLs,
+            photoURLs: photoKeys,  // storing local keys instead of URLs
             notes: notes.isEmpty ? nil : notes
         )
-        
+
         trainerVM.addProgressEntry(entry)
         dismiss()
+    }
+}
+
+// MARK: - Section Card
+
+private struct SectionCard<Content: View>: View {
+    let title: String
+    let icon: String
+    let content: Content
+
+    init(title: String, icon: String, @ViewBuilder content: () -> Content) {
+        self.title = title; self.icon = icon; self.content = content()
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 7) {
+                Image(systemName: icon)
+                    .font(.caption)
+                    .foregroundColor(.black)
+                Text(title)
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(.black)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(Color.tmGold)
+
+            content
+                .padding(.horizontal, 16)
+                .padding(.bottom, 16)
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(Color.white.opacity(0.05))
+        )
+        .padding(.horizontal, 20)
+    }
+}
+
+// MARK: - Metric Field
+
+private struct MetricField: View {
+    let label: String
+    let unit: String
+    @Binding var text: String
+
+    var body: some View {
+        HStack {
+            Text(label)
+                .font(.body)
+                .foregroundColor(.white.opacity(0.8))
+            Spacer()
+            TextField("0", text: $text)
+                .keyboardType(.decimalPad)
+                .multilineTextAlignment(.trailing)
+                .foregroundColor(.white)
+                .frame(width: 70)
+            Text(unit)
+                .font(.subheadline)
+                .foregroundColor(.tmGold)
+                .frame(width: 28, alignment: .leading)
+        }
+        .padding(.vertical, 4)
     }
 }
 
