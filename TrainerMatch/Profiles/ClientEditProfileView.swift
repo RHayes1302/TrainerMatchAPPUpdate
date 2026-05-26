@@ -2,49 +2,47 @@
 //  ClientEditProfileView.swift
 //  TrainerMatch
 //
-//  Client profile photos now upload to Supabase Storage.
+//  Fully linked to Supabase — reads from and saves to ClientRow.
 //
 
 import SwiftUI
 import PhotosUI
 
 struct ClientEditProfileView: View {
-    @EnvironmentObject var authManager: AuthManager
     @Environment(\.dismiss) var dismiss
+    @ObservedObject private var auth = SupabaseAuthManager.shared
 
     @State private var selectedSection: EditSection = .basic
-    @State private var isSaving = false
-    @State private var showingSaveConfirmation = false
+    @State private var isSaving          = false
+    @State private var showingSaveAlert  = false
+    @State private var saveError: String?
 
     // Basic
     @State private var firstName: String
-    @State private var lastName: String
-    @State private var city: String
-    @State private var state: String
-    @State private var birthDate: Date
-    @State private var preferredServiceType: ServiceType
+    @State private var lastName:  String
+    @State private var city:      String
+    @State private var state:     String
 
     // Goals
-    @State private var selectedGoals: Set<FitnessGoal>
-    @State private var fitnessLevel: String
-    @State private var targetWeight: String
+    @State private var fitnessLevel:  String
+    @State private var targetWeight:  String
+    @State private var selectedGoals: Set<String>
 
     // Health
     @State private var medicalConditions: String
-    @State private var injuries: String
-    @State private var allergies: String
-    @State private var medications: String
+    @State private var injuries:          String
+    @State private var allergies:         String
+    @State private var medications:       String
 
     // Photo
-    @State private var profileImage: UIImage?
-    @State private var imageSelection: PhotosPickerItem?
+    @State private var profileImage:    UIImage?
+    @State private var imageSelection:  PhotosPickerItem?
     @State private var isUploadingPhoto = false
 
     enum EditSection: String, CaseIterable {
         case basic  = "Basic"
         case goals  = "Goals"
         case health = "Health"
-
         var icon: String {
             switch self {
             case .basic:  return "person.fill"
@@ -54,20 +52,19 @@ struct ClientEditProfileView: View {
         }
     }
 
-    init(profile: SavedClientProfile) {
-        _firstName            = State(initialValue: profile.firstName)
-        _lastName             = State(initialValue: profile.lastName)
-        _city                 = State(initialValue: profile.city)
-        _state                = State(initialValue: profile.state)
-        _birthDate            = State(initialValue: profile.birthDate)
-        _preferredServiceType = State(initialValue: .inPerson)
-        _selectedGoals        = State(initialValue: Set(profile.fitnessGoals))
-        _fitnessLevel         = State(initialValue: profile.fitnessLevel)
-        _targetWeight         = State(initialValue: profile.targetWeight.map { String(Int($0)) } ?? "")
-        _medicalConditions    = State(initialValue: profile.medicalConditions)
-        _injuries             = State(initialValue: profile.injuries)
-        _allergies            = State(initialValue: profile.allergies)
-        _medications          = State(initialValue: profile.medications)
+    // Init from ClientRow (Supabase)
+    init(client: ClientRow) {
+        _firstName        = State(initialValue: client.firstName)
+        _lastName         = State(initialValue: client.lastName)
+        _city             = State(initialValue: client.city)
+        _state            = State(initialValue: client.state)
+        _fitnessLevel     = State(initialValue: client.fitnessLevel)
+        _targetWeight     = State(initialValue: client.targetWeight.map { String(Int($0)) } ?? "")
+        _selectedGoals    = State(initialValue: Set(client.fitnessGoals))
+        _medicalConditions = State(initialValue: client.medicalConditions)
+        _injuries         = State(initialValue: client.injuries)
+        _allergies        = State(initialValue: client.allergies)
+        _medications      = State(initialValue: client.medications)
     }
 
     var body: some View {
@@ -96,7 +93,7 @@ struct ClientEditProfileView: View {
         .toolbarColorScheme(.dark, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
-                Button(action: saveProfile) {
+                Button(action: { Task { await saveProfile() } }) {
                     if isSaving {
                         ProgressView().tint(.tmGold)
                     } else {
@@ -106,32 +103,38 @@ struct ClientEditProfileView: View {
                 .disabled(isSaving)
             }
         }
-        .onAppear {
-            // Try Supabase URL first, fall back to local
-            if let urlStr = SupabaseAuthManager.shared.currentClient?.profileImageUrl,
-               let url = URL(string: urlStr) {
-                Task {
-                    if let data = try? await URLSession.shared.data(from: url).0,
-                       let img = UIImage(data: data) {
-                        await MainActor.run { profileImage = img }
-                    }
-                }
-            } else if let userId = authManager.currentClientProfile?.id {
-                profileImage = ProfileImageManager.shared.loadImage(
-                    forKey: ProfileImageManager.profileImageKey(for: userId))
-            }
-        }
+        .onAppear { loadProfilePhoto() }
         .onChange(of: imageSelection) { _, newItem in
             Task { await handlePhotoPick(newItem) }
         }
-        .alert("Profile Saved!", isPresented: $showingSaveConfirmation) {
+        .alert("Profile Saved!", isPresented: $showingSaveAlert) {
             Button("Done") { dismiss() }
         } message: {
             Text("Your profile has been updated.")
         }
+        .alert("Save Failed", isPresented: Binding(
+            get: { saveError != nil },
+            set: { if !$0 { saveError = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(saveError ?? "Something went wrong.")
+        }
     }
 
-    // MARK: - Photo Upload
+    // MARK: - Photo
+
+    private func loadProfilePhoto() {
+        if let urlStr = auth.currentClient?.profileImageUrl,
+           let url = URL(string: urlStr) {
+            Task {
+                if let data = try? await URLSession.shared.data(from: url).0,
+                   let img = UIImage(data: data) {
+                    await MainActor.run { profileImage = img }
+                }
+            }
+        }
+    }
 
     private func handlePhotoPick(_ item: PhotosPickerItem?) async {
         guard let item,
@@ -146,33 +149,89 @@ struct ClientEditProfileView: View {
             uiImage.draw(in: CGRect(origin: .zero, size: newSize))
         }
 
-        await MainActor.run {
-            profileImage = resized
-            isUploadingPhoto = true
-        }
+        await MainActor.run { profileImage = resized; isUploadingPhoto = true }
 
         if let jpegData = resized.jpegData(compressionQuality: 0.8) {
             do {
                 _ = try await SupabaseAuthManager.shared.uploadProfilePhoto(imageData: jpegData)
             } catch {
-                print("❌ Client edit photo upload failed: \(error)")
-                if let userId = authManager.currentClientProfile?.id {
-                    ProfileImageManager.shared.saveImage(
-                        resized,
-                        forKey: ProfileImageManager.profileImageKey(for: userId))
-                }
+                print("❌ Photo upload failed: \(error)")
             }
         }
-
         await MainActor.run { isUploadingPhoto = false }
     }
 
-    // MARK: - Section Tab Bar
+    // MARK: - Save to Supabase
+
+    private func saveProfile() async {
+        guard let client = auth.currentClient else { return }
+        await MainActor.run { isSaving = true }
+
+        struct ClientUpdate: Encodable {
+            let firstName:         String
+            let lastName:          String
+            let city:              String
+            let state:             String
+            let fitnessLevel:      String
+            let targetWeight:      Double?
+            let fitnessGoals:      [String]
+            let medicalConditions: String
+            let injuries:          String
+            let allergies:         String
+            let medications:       String
+
+            enum CodingKeys: String, CodingKey {
+                case firstName         = "first_name"
+                case lastName          = "last_name"
+                case city, state
+                case fitnessLevel      = "fitness_level"
+                case targetWeight      = "target_weight"
+                case fitnessGoals      = "fitness_goals"
+                case medicalConditions = "medical_conditions"
+                case injuries, allergies, medications
+            }
+        }
+
+        let payload = ClientUpdate(
+            firstName:         firstName,
+            lastName:          lastName,
+            city:              city,
+            state:             state,
+            fitnessLevel:      fitnessLevel,
+            targetWeight:      Double(targetWeight),
+            fitnessGoals:      Array(selectedGoals),
+            medicalConditions: medicalConditions,
+            injuries:          injuries,
+            allergies:         allergies,
+            medications:       medications
+        )
+
+        do {
+            try await supabase
+                .from("clients")
+                .update(payload)
+                .eq("id", value: client.id)
+                .execute()
+
+            // Refresh the local auth state
+            await SupabaseAuthManager.shared.restoreSession()
+            await MainActor.run { isSaving = false; showingSaveAlert = true }
+        } catch {
+            await MainActor.run {
+                isSaving = false
+                saveError = error.localizedDescription
+            }
+        }
+    }
+
+    // MARK: - Tab Bar
 
     private var sectionTabBar: some View {
         HStack(spacing: 0) {
             ForEach(EditSection.allCases, id: \.self) { section in
-                Button(action: { withAnimation(.easeInOut(duration: 0.2)) { selectedSection = section } }) {
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.2)) { selectedSection = section }
+                }) {
                     VStack(spacing: 4) {
                         Image(systemName: section.icon).font(.caption)
                         Text(section.rawValue.uppercased())
@@ -189,7 +248,8 @@ struct ClientEditProfileView: View {
             }
         }
         .background(Color.white.opacity(0.04))
-        .overlay(Rectangle().frame(height: 1).foregroundColor(Color.white.opacity(0.08)), alignment: .bottom)
+        .overlay(Rectangle().frame(height: 1)
+            .foregroundColor(Color.white.opacity(0.08)), alignment: .bottom)
     }
 
     // MARK: - Basic Section
@@ -245,28 +305,6 @@ struct ClientEditProfileView: View {
                 }
             }
 
-            editCard(title: "DATE OF BIRTH", icon: "calendar") {
-                DatePicker("", selection: $birthDate, displayedComponents: .date)
-                    .datePickerStyle(.compact).colorScheme(.dark).tint(.tmGold)
-            }
-
-            editCard(title: "PREFERRED TRAINING FORMAT", icon: "figure.run") {
-                VStack(spacing: 8) {
-                    ForEach(ServiceType.allCases, id: \.self) { type in
-                        Button(action: { preferredServiceType = type }) {
-                            HStack(spacing: 12) {
-                                Image(systemName: preferredServiceType == type
-                                      ? "checkmark.circle.fill" : "circle")
-                                    .foregroundColor(preferredServiceType == type ? .tmGold : .white.opacity(0.3))
-                                Text(type.rawValue).foregroundColor(.white).font(.subheadline)
-                                Spacer()
-                            }
-                            .padding(.vertical, 8)
-                        }
-                    }
-                }
-            }
-
             nextButton("Next: Fitness Goals →") { selectedSection = .goals }
         }
     }
@@ -300,19 +338,23 @@ struct ClientEditProfileView: View {
                 VStack(spacing: 0) {
                     ForEach(FitnessGoal.allCases, id: \.self) { goal in
                         Button(action: {
-                            if selectedGoals.contains(goal) { selectedGoals.remove(goal) }
-                            else { selectedGoals.insert(goal) }
+                            if selectedGoals.contains(goal.rawValue) {
+                                selectedGoals.remove(goal.rawValue)
+                            } else {
+                                selectedGoals.insert(goal.rawValue)
+                            }
                         }) {
                             HStack(spacing: 12) {
-                                Image(systemName: selectedGoals.contains(goal)
+                                Image(systemName: selectedGoals.contains(goal.rawValue)
                                       ? "checkmark.circle.fill" : "circle")
-                                    .foregroundColor(selectedGoals.contains(goal) ? .tmGold : .white.opacity(0.3))
+                                    .foregroundColor(selectedGoals.contains(goal.rawValue)
+                                                     ? .tmGold : .white.opacity(0.3))
                                     .font(.title3)
                                 Text(goal.rawValue).foregroundColor(.white).font(.subheadline)
                                 Spacer()
                             }
                             .padding(.vertical, 12).padding(.horizontal, 4)
-                            .background(selectedGoals.contains(goal)
+                            .background(selectedGoals.contains(goal.rawValue)
                                 ? Color.tmGold.opacity(0.07) : Color.clear)
                         }
                         Divider().background(Color.white.opacity(0.06))
@@ -341,16 +383,14 @@ struct ClientEditProfileView: View {
             }
 
             editCard(title: "ALLERGIES", icon: "allergens") {
-                editTextEditor("e.g. Pollen, latex, or None",
-                               text: $allergies)
+                editTextEditor("e.g. Pollen, latex, or None", text: $allergies)
             }
 
             editCard(title: "MEDICATIONS", icon: "pills.fill") {
-                editTextEditor("e.g. Metformin, or None",
-                               text: $medications)
+                editTextEditor("e.g. Metformin, or None", text: $medications)
             }
 
-            Button(action: saveProfile) {
+            Button(action: { Task { await saveProfile() } }) {
                 HStack(spacing: 8) {
                     if isSaving {
                         ProgressView().tint(.black)
@@ -368,38 +408,6 @@ struct ClientEditProfileView: View {
             }
             .disabled(isSaving)
             .padding(.top, 8)
-        }
-    }
-
-    // MARK: - Save
-
-    private func saveProfile() {
-        guard let current = authManager.currentClientProfile else { return }
-        isSaving = true
-
-        let updated = SavedClientProfile(
-            id: current.id,
-            firstName: firstName,
-            lastName: lastName,
-            email: current.email,
-            password: current.password,
-            city: city,
-            state: state,
-            birthDate: birthDate,
-            fitnessGoals: Array(selectedGoals),
-            fitnessLevel: fitnessLevel,
-            targetWeight: Double(targetWeight),
-            medicalConditions: medicalConditions,
-            injuries: injuries,
-            allergies: allergies,
-            medications: medications,
-            dateCreated: current.dateCreated
-        )
-
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            authManager.updateClientProfile(updated)
-            isSaving = false
-            showingSaveConfirmation = true
         }
     }
 

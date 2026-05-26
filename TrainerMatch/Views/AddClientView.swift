@@ -21,7 +21,7 @@ struct AddClientView: View {
     @State private var notes = ""
     @State private var selectedGoals: Set<FitnessGoal> = []
     @State private var selectedServiceType: ServiceType = .inPerson
-    @State private var foundVia = "TrainerMatch"
+    @State private var foundVia = "Nearby Trainers"
     
     var body: some View {
         NavigationView {
@@ -91,7 +91,7 @@ struct AddClientView: View {
                     }
                     
                     Picker("How did they find you?", selection: $foundVia) {
-                        Text("TrainerMatch").tag("TrainerMatch")
+                        Text("Nearby Trainers").tag("Nearby Trainers")
                         Text("Referral").tag("Referral")
                         Text("Social Media").tag("Social Media")
                         Text("Other").tag("Other")

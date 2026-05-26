@@ -55,7 +55,7 @@ struct GymAdvertiserSignupView: View {
                                 .font(.system(size: 52)).foregroundColor(.tmGold)
                             Text("List Your Gym or Studio")
                                 .font(.system(size: 22, weight: .black)).foregroundColor(.white)
-                            Text("Reach trainers and clients already using TrainerMatch in your area.")
+                            Text("Reach trainers and clients already using Nearby Trainers in your area.")
                                 .font(.caption).foregroundColor(.white.opacity(0.45))
                                 .multilineTextAlignment(.center).padding(.horizontal)
                         }
@@ -105,7 +105,7 @@ struct GymAdvertiserSignupView: View {
                 .padding(.horizontal, 20).padding(.vertical, 14)
             }
         }
-        .navigationTitle("Advertise on TrainerMatch")
+        .navigationTitle("Advertise on Nearby Trainers")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Color.black, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)

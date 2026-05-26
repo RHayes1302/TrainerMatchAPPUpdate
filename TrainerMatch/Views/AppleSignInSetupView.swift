@@ -101,7 +101,7 @@ struct AppleTrainerSetupView: View {
                                 if step < 2 { step += 1 }
                                 else { saveTrainer() }
                             }) {
-                                Text(step < 2 ? "NEXT" : "ENTER TRAINERMATCH")
+                                Text(step < 2 ? "NEXT" : "ENTER Nearby Trainers")
                                     .font(.system(size: 14, weight: .heavy)).tracking(0.5)
                                     .foregroundColor(.black)
                                     .frame(maxWidth: .infinity).frame(height: 50)
@@ -308,7 +308,7 @@ struct AppleClientSetupView: View {
                                 if step < 1 { step += 1 }
                                 else { saveClient() }
                             }) {
-                                Text(step < 1 ? "NEXT" : "ENTER TRAINERMATCH")
+                                Text(step < 1 ? "NEXT" : "ENTER Nearby Trainers")
                                     .font(.system(size: 14, weight: .heavy)).tracking(0.5)
                                     .foregroundColor(.black)
                                     .frame(maxWidth: .infinity).frame(height: 50)

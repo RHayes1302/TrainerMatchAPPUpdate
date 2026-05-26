@@ -213,7 +213,7 @@ struct SupabaseTrainerSetupView: View {
                         .frame(maxWidth: .infinity).frame(height: 50)
                         .background(RoundedRectangle(cornerRadius: 25).fill(Color.tmGold))
                 } else {
-                    Text(step < 2 ? "NEXT" : "ENTER TRAINERMATCH")
+                    Text(step < 2 ? "NEXT" : "ENTER Nearby Trainers")
                         .font(.system(size: 14, weight: .heavy)).tracking(0.5)
                         .foregroundColor(canProceed ? .black : .white.opacity(0.3))
                         .frame(maxWidth: .infinity).frame(height: 50)
@@ -331,7 +331,7 @@ struct SupabaseClientSetupView: View {
                                         .frame(maxWidth: .infinity).frame(height: 50)
                                         .background(RoundedRectangle(cornerRadius: 25).fill(Color.tmGold))
                                 } else {
-                                    Text(step < 1 ? "NEXT" : "ENTER TRAINERMATCH")
+                                    Text(step < 1 ? "NEXT" : "ENTER Nearby Trainers")
                                         .font(.system(size: 14, weight: .heavy)).tracking(0.5)
                                         .foregroundColor(canProceed ? .black : .white.opacity(0.3))
                                         .frame(maxWidth: .infinity).frame(height: 50)

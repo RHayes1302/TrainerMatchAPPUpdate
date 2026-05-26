@@ -22,7 +22,7 @@ struct AboutUsView: View {
                         TrainerMatchLogo(size: .large)
                             .shadow(color: .tmGold.opacity(0.3), radius: 20, x: 0, y: 10)
                         
-                        Text("TrainerMatch")
+                        Text("Nearby Trainers")
                             .font(.system(size: 32, weight: .bold))
                             .italic()
                             .foregroundColor(.white)
@@ -46,13 +46,13 @@ struct AboutUsView: View {
                             .foregroundColor(.white)
                             .padding(.horizontal, 20)
                         
-                        Text("Welcome to TrainerMatch, the premier platform for finding fitness trainers in your area. Our mission is to revolutionize the fitness industry by connecting individuals with top-notch trainers.")
+                        Text("Welcome to Nearby Trainers, the premier platform for finding fitness trainers in your area. Our mission is to revolutionize the fitness industry by connecting individuals with top-notch trainers.")
                             .font(.body)
                             .foregroundColor(.white.opacity(0.8))
                             .lineSpacing(6)
                             .padding(.horizontal, 20)
                         
-                        Text("Founded on a passion for fitness, TrainerMatch addresses the long-standing challenge of finding qualified trainers and accessible fitness options. With TrainerMatch, users can effortlessly discover trainers tailored to their location, fitness goals and preferences.")
+                        Text("Founded on a passion for fitness, Nearby Trainers addresses the long-standing challenge of finding qualified trainers and accessible fitness options. With Nearby Trainers, users can effortlessly discover trainers tailored to their location, fitness goals and preferences.")
                             .font(.body)
                             .foregroundColor(.white.opacity(0.8))
                             .lineSpacing(6)

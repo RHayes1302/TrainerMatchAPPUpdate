@@ -16,7 +16,7 @@ struct TrainerMatchHeaderView: View {
                     .shadow(color: .tmGold.opacity(0.3), radius: 10, x: 0, y: 5)
                 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("TrainerMatch")
+                    Text("Nearby Trainers")
                         .font(.title2)
                         .fontWeight(.bold)
                         .italic()

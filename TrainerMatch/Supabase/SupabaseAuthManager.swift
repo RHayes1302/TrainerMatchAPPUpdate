@@ -125,15 +125,18 @@ class SupabaseAuthManager: ObservableObject {
         do {
             let session = try await supabase.auth.session
             let authId  = session.user.id
+            print("🔄 restoreSession — authId: \(authId)")
             await loadProfileForAuthId(authId)
             PushNotificationManager.shared.loginUser(userId: authId.uuidString)
         } catch {
+            print("⚠️ restoreSession — no session: \(error)")
             isAuthenticated = false
         }
         isLoading = false
     }
 
     private func loadProfileForAuthId(_ authId: UUID) async {
+        print("🔍 loadProfileForAuthId: \(authId)")
         if let trainer = try? await supabase
             .from("trainers")
             .select()
@@ -141,6 +144,7 @@ class SupabaseAuthManager: ObservableObject {
             .single()
             .execute()
             .value as TrainerRow {
+            print("✅ Loaded trainer: \(trainer.fullName)")
             currentTrainer    = trainer
             currentUserRole   = .trainer
             isAuthenticated   = true
@@ -153,12 +157,71 @@ class SupabaseAuthManager: ObservableObject {
             .single()
             .execute()
             .value as ClientRow {
+            print("✅ Loaded client: \(client.fullName)")
             currentClient   = client
             currentUserRole = .client
             isAuthenticated = true
             return
         }
+        print("❌ loadProfileForAuthId — not found in either table")
         isAuthenticated = false
+    }
+
+    // MARK: - Email Sign In
+
+    func signIn(email: String, password: String, role: UserRole) async throws {
+        isLoading = true
+        errorMessage = nil
+
+        do {
+            let session = try await supabase.auth.signIn(email: email, password: password)
+            let authId = session.user.id
+            print("✅ Auth success — authId: \(authId)")
+
+            // Try trainer table
+            if let trainer = try? await supabase
+                .from("trainers")
+                .select()
+                .eq("auth_id", value: authId)
+                .single()
+                .execute()
+                .value as TrainerRow {
+                print("✅ Found trainer: \(trainer.fullName)")
+                currentTrainer  = trainer
+                currentUserRole = .trainer
+                isAuthenticated = true
+                PushNotificationManager.shared.loginUser(userId: authId.uuidString)
+                isLoading = false
+                return
+            }
+            print("⚠️ Not found in trainers table")
+
+            // Try client table
+            if let client = try? await supabase
+                .from("clients")
+                .select()
+                .eq("auth_id", value: authId)
+                .single()
+                .execute()
+                .value as ClientRow {
+                print("✅ Found client: \(client.fullName)")
+                currentClient   = client
+                currentUserRole = .client
+                isAuthenticated = true
+                PushNotificationManager.shared.loginUser(userId: authId.uuidString)
+                isLoading = false
+                return
+            }
+            print("❌ Not found in clients table — authId: \(authId)")
+
+            isLoading = false
+            throw TMError.profileNotFound
+
+        } catch {
+            print("❌ signIn error: \(error)")
+            isLoading = false
+            throw error
+        }
     }
 
     // MARK: - Email Sign Up
@@ -225,45 +288,6 @@ class SupabaseAuthManager: ObservableObject {
         isAuthenticated = true
     }
 
-    // MARK: - Email Sign In
-
-    func signIn(email: String, password: String, role: UserRole) async throws {
-        isLoading = true
-        errorMessage = nil
-        defer { isLoading = false }
-
-        let session = try await supabase.auth.signIn(email: email, password: password)
-        let authId = session.user.id
-
-        if role == .trainer {
-            guard let trainer = try? await supabase
-                .from("trainers")
-                .select()
-                .eq("auth_id", value: authId)
-                .single()
-                .execute()
-                .value as TrainerRow else {
-                throw TMError.profileNotFound
-            }
-            currentTrainer  = trainer
-            currentUserRole = .trainer
-        } else {
-            guard let client = try? await supabase
-                .from("clients")
-                .select()
-                .eq("auth_id", value: authId)
-                .single()
-                .execute()
-                .value as ClientRow else {
-                throw TMError.profileNotFound
-            }
-            currentClient   = client
-            currentUserRole = .client
-        }
-        isAuthenticated = true
-        PushNotificationManager.shared.loginUser(userId: authId.uuidString)
-    }
-
     // MARK: - Apple Sign In
 
     func signInWithApple(
@@ -272,73 +296,82 @@ class SupabaseAuthManager: ObservableObject {
     ) async throws -> Bool {
         isLoading = true
         errorMessage = nil
-        defer { isLoading = false }
 
-        let session = try await supabase.auth.signInWithIdToken(
-            credentials: .init(provider: .apple, idToken: idToken, nonce: nonce)
-        )
-        let authId = session.user.id
-        let email  = session.user.email ?? "\(authId)@privaterelay.appleid.com"
+        do {
+            let session = try await supabase.auth.signInWithIdToken(
+                credentials: .init(provider: .apple, idToken: idToken, nonce: nonce)
+            )
+            let authId = session.user.id
+            let email  = session.user.email ?? "\(authId)@privaterelay.appleid.com"
 
-        if role == .trainer {
-            if let trainer = try? await supabase
-                .from("trainers").select()
-                .eq("auth_id", value: authId)
-                .single().execute().value as TrainerRow {
-                currentTrainer  = trainer
-                currentUserRole = .trainer
-                isAuthenticated = true
-                PushNotificationManager.shared.loginUser(userId: authId.uuidString)
-                return false
+            if role == .trainer {
+                if let trainer = try? await supabase
+                    .from("trainers").select()
+                    .eq("auth_id", value: authId)
+                    .single().execute().value as TrainerRow {
+                    currentTrainer  = trainer
+                    currentUserRole = .trainer
+                    isAuthenticated = true
+                    isLoading = false
+                    PushNotificationManager.shared.loginUser(userId: authId.uuidString)
+                    return false
+                }
+                if let trainer = try? await supabase
+                    .from("trainers").select()
+                    .eq("email", value: email)
+                    .single().execute().value as TrainerRow {
+                    var updated = trainer
+                    updated.authId = authId
+                    try? await supabase.from("trainers").update(updated).eq("id", value: trainer.id).execute()
+                    currentTrainer  = updated
+                    currentUserRole = .trainer
+                    isAuthenticated = true
+                    isLoading = false
+                    PushNotificationManager.shared.loginUser(userId: authId.uuidString)
+                    return false
+                }
+            } else {
+                if let client = try? await supabase
+                    .from("clients").select()
+                    .eq("auth_id", value: authId)
+                    .single().execute().value as ClientRow {
+                    currentClient   = client
+                    currentUserRole = .client
+                    isAuthenticated = true
+                    isLoading = false
+                    PushNotificationManager.shared.loginUser(userId: authId.uuidString)
+                    return false
+                }
+                if let client = try? await supabase
+                    .from("clients").select()
+                    .eq("email", value: email)
+                    .single().execute().value as ClientRow {
+                    var updated = client
+                    updated.authId = authId
+                    try? await supabase.from("clients").update(updated).eq("id", value: client.id).execute()
+                    currentClient   = updated
+                    currentUserRole = .client
+                    isAuthenticated = true
+                    isLoading = false
+                    PushNotificationManager.shared.loginUser(userId: authId.uuidString)
+                    return false
+                }
             }
-            if let trainer = try? await supabase
-                .from("trainers").select()
-                .eq("email", value: email)
-                .single().execute().value as TrainerRow {
-                var updated = trainer
-                updated.authId = authId
-                try? await supabase.from("trainers").update(updated).eq("id", value: trainer.id).execute()
-                currentTrainer  = updated
-                currentUserRole = .trainer
-                isAuthenticated = true
-                PushNotificationManager.shared.loginUser(userId: authId.uuidString)
-                return false
-            }
-        } else {
-            if let client = try? await supabase
-                .from("clients").select()
-                .eq("auth_id", value: authId)
-                .single().execute().value as ClientRow {
-                currentClient   = client
-                currentUserRole = .client
-                isAuthenticated = true
-                PushNotificationManager.shared.loginUser(userId: authId.uuidString)
-                return false
-            }
-            if let client = try? await supabase
-                .from("clients").select()
-                .eq("email", value: email)
-                .single().execute().value as ClientRow {
-                var updated = client
-                updated.authId = authId
-                try? await supabase.from("clients").update(updated).eq("id", value: client.id).execute()
-                currentClient   = updated
-                currentUserRole = .client
-                isAuthenticated = true
-                PushNotificationManager.shared.loginUser(userId: authId.uuidString)
-                return false
-            }
+
+            // New user — set pending state
+            pendingAppleAuthId    = authId
+            pendingAppleEmail     = email
+            pendingAppleFirstName = firstName
+            pendingAppleLastName  = lastName
+            pendingAppleRole      = role
+            isAuthenticated       = true
+            isLoading = false
+            return true
+
+        } catch {
+            isLoading = false
+            throw error
         }
-
-        // ✅ New user — set pending state AND mark authenticated
-        // so AppEntryView shows the setup screen
-        pendingAppleAuthId    = authId
-        pendingAppleEmail     = email
-        pendingAppleFirstName = firstName
-        pendingAppleLastName  = lastName
-        pendingAppleRole      = role
-        isAuthenticated       = true  // ✅ KEY FIX
-        return true
     }
 
     var pendingAppleAuthId:    UUID?    = nil

@@ -18,6 +18,7 @@ struct SupabaseLoginView: View {
     @State private var isLoading             = false
     @State private var showingForgotPassword = false
     @State private var nonce: String         = ""
+    @StateObject private var appSettings     = AppSettingsStore.shared
 
     var body: some View {
         ZStack {
@@ -28,7 +29,7 @@ struct SupabaseLoginView: View {
                         TrainerMatchLogo(size: .large)
                             .shadow(color: .tmGold.opacity(0.3), radius: 20)
                             .padding(.top, 60)
-                        Text("TrainerMatch")
+                        Text("Nearby Trainers")
                             .font(.system(size: 44, weight: .heavy)).italic()
                             .foregroundColor(.white)
                         Text("Local Trainers, Real Results")
@@ -72,6 +73,12 @@ struct SupabaseLoginView: View {
                             }
                         }
                         .padding(.top, 4)
+
+                        // ── App Review Access (only visible when Review Mode is ON) ──
+                        if appSettings.settings.appReviewMode {
+                            AppReviewLoginSection()
+                                .padding(.top, 8)
+                        }
                     }
                     .padding(24)
                     .background(RoundedRectangle(cornerRadius: 20)
@@ -89,6 +96,7 @@ struct SupabaseLoginView: View {
                 }
             }
         }
+        .task { await appSettings.fetch() }
         .alert("Reset Password", isPresented: $showingForgotPassword) {
             TextField("your@email.com", text: $email)
                 .keyboardType(.emailAddress).autocapitalization(.none)
@@ -123,12 +131,10 @@ struct SupabaseLoginView: View {
 
     private var appleSignInButton: some View {
         SignInWithAppleButton(.signIn) { request in
-            print("🍎 Apple Sign In request started")
             nonce = randomNonceString()
             request.requestedScopes = [.fullName, .email]
             request.nonce           = sha256(nonce)
         } onCompletion: { result in
-            print("🍎 Apple Sign In completed: \(result)")
             handleAppleResult(result)
         }
         .signInWithAppleButtonStyle(.white)
@@ -208,47 +214,35 @@ struct SupabaseLoginView: View {
                     email: email, password: password,
                     role: isTrainerLogin ? .trainer : .client
                 )
-                await MainActor.run { dismiss() }
+                await MainActor.run { isLoading = false; dismiss() }
             } catch {
                 await MainActor.run {
                     errorMessage = error.localizedDescription
                     showingError = true
+                    isLoading = false
                 }
             }
-            await MainActor.run { isLoading = false }
         }
     }
 
     private func handleAppleResult(_ result: Result<ASAuthorization, Error>) {
-        print("🍎 handleAppleResult fired")
         switch result {
         case .success(let authResult):
-            print("🍎 Apple success")
             guard let cred = authResult.credential as? ASAuthorizationAppleIDCredential,
                   let tokenData = cred.identityToken,
-                  let token = String(data: tokenData, encoding: .utf8) else {
-                print("🍎 Failed to get token")
-                return
-            }
+                  let token = String(data: tokenData, encoding: .utf8) else { return }
             let firstName = cred.fullName?.givenName  ?? ""
             let lastName  = cred.fullName?.familyName ?? ""
-            print("🍎 Token obtained, firstName: \(firstName)")
             isLoading = true
             Task {
                 do {
-                    print("🍎 Calling signInWithApple...")
                     let _ = try await SupabaseAuthManager.shared.signInWithApple(
                         idToken: token, nonce: nonce,
                         role: isTrainerLogin ? .trainer : .client,
                         firstName: firstName, lastName: lastName
                     )
-                    print("🍎 signInWithApple succeeded, dismissing...")
-                    await MainActor.run {
-                        isLoading = false
-                        dismiss()
-                    }
+                    await MainActor.run { isLoading = false; dismiss() }
                 } catch {
-                    print("🍎 signInWithApple ERROR: \(error)")
                     await MainActor.run {
                         errorMessage = "Apple Sign In failed: \(error.localizedDescription)"
                         showingError = true
@@ -257,7 +251,6 @@ struct SupabaseLoginView: View {
                 }
             }
         case .failure(let error):
-            print("🍎 Apple failure: \(error)")
             errorMessage = error.localizedDescription
             showingError = true
         }

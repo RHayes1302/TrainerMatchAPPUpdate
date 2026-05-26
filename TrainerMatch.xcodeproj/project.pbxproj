@@ -438,7 +438,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = TrainerMatch/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Trainer Match";
+				INFOPLIST_KEY_CFBundleDisplayName = "Nearby Trainers";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.healthcare-fitness";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Camera access required to take live photos for profiles and progress updates";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "TrainerMatch needs access to read your step count and distance data to track your daily fitness progress and display your activity in the health dashboard.";
@@ -483,7 +483,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = TrainerMatch/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = "Trainer Match";
+				INFOPLIST_KEY_CFBundleDisplayName = "Nearby Trainers";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.healthcare-fitness";
 				INFOPLIST_KEY_NSCameraUsageDescription = "Camera access required to take live photos for profiles and progress updates";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "TrainerMatch needs access to read your step count and distance data to track your daily fitness progress and display your activity in the health dashboard.";

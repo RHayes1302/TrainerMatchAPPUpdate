@@ -109,7 +109,6 @@ enum PARQResponse: String, Codable, CaseIterable {
 }
 
 enum PARQQuestion: String, Codable, CaseIterable {
-    // Standard PAR-Q 7 questions
     case heartCondition   = "heartCondition"
     case chestPainActive  = "chestPainActive"
     case chestPainRest    = "chestPainRest"
@@ -161,11 +160,8 @@ enum PARQQuestion: String, Codable, CaseIterable {
         }
     }
 
-    // Flag if client answers YES to these
-    var flagOnYes: Bool { true } // All 7 standard questions flag on Yes
-
-    // Flag if client answers NO to these (none in standard PAR-Q)
-    var flagOnNo: Bool { false }
+    var flagOnYes: Bool { true }
+    var flagOnNo:  Bool { false }
 
     var concernMessage: String {
         switch self {
@@ -221,57 +217,57 @@ struct FitnessBackground: Codable {
     var pregnantOrRecent: PregnancyStatus   = .notSelected
 
     enum ActivityFrequency: String, Codable, CaseIterable {
-        case notSelected     = "Select"
-        case sedentary       = "Sedentary (little to no exercise)"
-        case lightlyActive   = "Lightly active (1–2 days/week)"
+        case notSelected      = "Select"
+        case sedentary        = "Sedentary (little to no exercise)"
+        case lightlyActive    = "Lightly active (1–2 days/week)"
         case moderatelyActive = "Moderately active (3–4 days/week)"
-        case veryActive      = "Very active (5+ days/week)"
-        case athlete         = "Competitive athlete"
+        case veryActive       = "Very active (5+ days/week)"
+        case athlete          = "Competitive athlete"
     }
 
     enum ExerciseType: String, Codable, CaseIterable {
-        case cardio          = "Cardio"
-        case weightTraining  = "Weight Training"
-        case yoga            = "Yoga / Pilates"
-        case sports          = "Sports"
-        case swimming        = "Swimming"
-        case cycling         = "Cycling"
-        case hiit            = "HIIT"
-        case none            = "None currently"
+        case cardio         = "Cardio"
+        case weightTraining = "Weight Training"
+        case yoga           = "Yoga / Pilates"
+        case sports         = "Sports"
+        case swimming       = "Swimming"
+        case cycling        = "Cycling"
+        case hiit           = "HIIT"
+        case none           = "None currently"
     }
 
     enum FitnessGoalType: String, Codable, CaseIterable {
-        case notSelected     = "Select"
-        case weightLoss      = "Weight Loss"
-        case muscleGain      = "Muscle Gain"
-        case endurance       = "Endurance / Stamina"
-        case flexibility     = "Flexibility / Mobility"
-        case generalHealth   = "General Health & Fitness"
-        case athleticPerf    = "Athletic Performance"
-        case rehabilitation  = "Rehabilitation / Recovery"
+        case notSelected   = "Select"
+        case weightLoss    = "Weight Loss"
+        case muscleGain    = "Muscle Gain"
+        case endurance     = "Endurance / Stamina"
+        case flexibility   = "Flexibility / Mobility"
+        case generalHealth = "General Health & Fitness"
+        case athleticPerf  = "Athletic Performance"
+        case rehabilitation = "Rehabilitation / Recovery"
     }
 
     enum InjuryHistory: String, Codable, CaseIterable {
-        case notSelected     = "Select"
-        case none            = "No injuries"
-        case pastMinor       = "Past minor injuries (healed)"
-        case pastMajor       = "Past major injuries (healed)"
-        case currentMinor    = "Current minor issue"
-        case currentMajor    = "Current significant injury"
+        case notSelected   = "Select"
+        case none          = "No injuries"
+        case pastMinor     = "Past minor injuries (healed)"
+        case pastMajor     = "Past major injuries (healed)"
+        case currentMinor  = "Current minor issue"
+        case currentMajor  = "Current significant injury"
     }
 
     enum SmokingStatus: String, Codable, CaseIterable {
-        case notSelected     = "Select"
-        case never           = "Never smoked"
-        case former          = "Former smoker"
-        case current         = "Current smoker"
+        case notSelected = "Select"
+        case never       = "Never smoked"
+        case former      = "Former smoker"
+        case current     = "Current smoker"
     }
 
     enum PregnancyStatus: String, Codable, CaseIterable {
-        case notSelected     = "Select"
-        case notApplicable   = "Not applicable"
-        case no              = "No"
-        case yes             = "Currently pregnant"
+        case notSelected       = "Select"
+        case notApplicable     = "Not applicable"
+        case no                = "No"
+        case yes               = "Currently pregnant"
         case recentlyPostpartum = "Recently postpartum (< 6 months)"
     }
 }
@@ -310,7 +306,6 @@ class PARQStore: ObservableObject {
     // MARK: Actions
 
     func requestForm(trainerId: String, clientId: String, clientName: String) {
-        // Only one pending at a time
         guard pendingForm(forClient: clientId, trainerId: trainerId) == nil else { return }
         let form = PARQForm(trainerId: trainerId, clientId: clientId, clientName: clientName)
         forms.insert(form, at: 0)
@@ -324,20 +319,44 @@ class PARQStore: ObservableObject {
         )
     }
 
+    // ✅ FIX: Local notification goes to CLIENT (confirmation).
+    //         Push notification goes to TRAINER via OneSignal.
     func submit(_ form: PARQForm) {
-        var updated       = form
-        updated.status    = .completed
+        var updated         = form
+        updated.status      = .completed
         updated.submittedAt = Date()
         upsert(updated)
+
+        // ✅ Local in-app notification for CLIENT (confirmation they submitted)
         NotificationManager.shared.send(
-            recipientId: form.trainerId, recipientRole: .trainer,
-            senderId: form.clientId, senderName: form.clientName,
+            recipientId: form.clientId,
+            recipientRole: .client,
+            senderId: form.trainerId,
+            senderName: "TrainerMatch",
             category: .checkIn,
-            title: "\(form.clientName) completed their PAR-Q",
+            title: "PAR-Q Submitted ✓",
             body: updated.hasConcerns
+                ? "Form submitted. \(updated.flaggedAnswers.count) concern(s) flagged for your trainer."
+                : "Your PAR-Q form was submitted successfully. No concerns flagged."
+        )
+
+        // ✅ OneSignal push to TRAINER's phone
+        Task {
+            guard let trainers = try? await SupabaseAuthManager.shared.fetchAllTrainers(),
+                  let trainer  = trainers.first(where: { $0.id.uuidString == form.trainerId }),
+                  let authId   = trainer.authId?.uuidString.uppercased() else {
+                print("⚠️ PAR-Q push: trainer not found for id \(form.trainerId)")
+                return
+            }
+
+            let title = "\(form.clientName) completed their PAR-Q"
+            let body  = updated.hasConcerns
                 ? "⚠️ \(updated.flaggedAnswers.count) concern(s) flagged — review required."
                 : "✓ No health concerns flagged."
-        )
+
+            await sendOneSignalPush(toAuthId: authId, title: title, body: body,
+                                    data: ["action": "parq_review", "client_id": form.clientId])
+        }
     }
 
     func markReviewed(_ form: PARQForm) {
@@ -345,6 +364,43 @@ class PARQStore: ObservableObject {
         updated.status = .reviewed
         upsert(updated)
     }
+
+    // MARK: - OneSignal Push Helper
+
+    private func sendOneSignalPush(
+        toAuthId: String,
+        title:    String,
+        body:     String,
+        data:     [String: String] = [:]
+    ) async {
+        guard let url = URL(string: "https://onesignal.com/api/v1/notifications") else { return }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        // ⚠️ Replace YOUR_ONESIGNAL_REST_API_KEY with your actual key
+        request.setValue("os_v2_app_blw7lbncvndivcn7cfn2f5poyzngpo73wvge7hnkaqzlrem6yqyqelb7bgtkl7jjrhezgfth3cwae6nhznpiq4x2rb434cdghdjicsa", forHTTPHeaderField: "Authorization")
+
+        let payload: [String: Any] = [
+            "app_id":                    "0aedf585-a2ab-468a-89bf-115ba2f5eec6",
+            "include_external_user_ids": [toAuthId],
+            "headings":                  ["en": title],
+            "contents":                  ["en": body],
+            "data":                      data,
+            "ios_sound":                 "default"
+        ]
+
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: payload)
+            let (responseData, _) = try await URLSession.shared.data(for: request)
+            let responseStr = String(data: responseData, encoding: .utf8) ?? "no response"
+            print("📲 PAR-Q OneSignal push → \(toAuthId): \(responseStr)")
+        } catch {
+            print("❌ PAR-Q push failed: \(error)")
+        }
+    }
+
+    // MARK: Private
 
     private func upsert(_ form: PARQForm) {
         if let i = forms.firstIndex(where: { $0.id == form.id }) {
@@ -379,7 +435,7 @@ struct ClientPARQFormView: View {
 
     @State private var answers:    [PARQAnswer]
     @State private var background: FitnessBackground
-    @State private var currentPage = 0   // 0 = PAR-Q questions, 1 = fitness background, 2 = review
+    @State private var currentPage = 0
     @State private var showingConfirm = false
 
     init(form: PARQForm, onSubmit: @escaping () -> Void) {
@@ -399,17 +455,15 @@ struct ClientPARQFormView: View {
         ZStack {
             Color.black.ignoresSafeArea()
             VStack(spacing: 0) {
-                // Progress bar
                 progressHeader
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 0) {
-                        if currentPage == 0 { parqPage }
+                        if currentPage == 0      { parqPage }
                         else if currentPage == 1 { backgroundPage }
-                        else { reviewPage }
+                        else                     { reviewPage }
                     }
                     .padding(20)
                 }
-                // Bottom nav
                 bottomNav
             }
         }
@@ -463,7 +517,6 @@ struct ClientPARQFormView: View {
 
     private var parqPage: some View {
         VStack(alignment: .leading, spacing: 20) {
-            // Header card
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 10) {
                     Image(systemName: "heart.text.square.fill")
@@ -497,7 +550,6 @@ struct ClientPARQFormView: View {
                     .font(.caption).foregroundColor(.white.opacity(0.5))
             }
 
-            // Activity level
             bgSection("Current Activity Level", icon: "figure.run") {
                 AnyView(DropdownPicker(
                     selection: $background.activityLevel,
@@ -506,7 +558,6 @@ struct ClientPARQFormView: View {
                 ))
             }
 
-            // Exercise types (multi-select)
             bgSection("Types of Exercise", icon: "dumbbell.fill") {
                 AnyView(MultiSelectChips(
                     selected: $background.exerciseTypes,
@@ -515,7 +566,6 @@ struct ClientPARQFormView: View {
                 ))
             }
 
-            // Primary goal
             bgSection("Primary Fitness Goal", icon: "target") {
                 AnyView(DropdownPicker(
                     selection: $background.fitnessGoal,
@@ -524,7 +574,6 @@ struct ClientPARQFormView: View {
                 ))
             }
 
-            // Injury history
             bgSection("Injury History", icon: "bandage.fill") {
                 AnyView(VStack(spacing: 8) {
                     DropdownPicker(
@@ -542,7 +591,6 @@ struct ClientPARQFormView: View {
                 })
             }
 
-            // Smoking
             bgSection("Smoking Status", icon: "lungs.fill") {
                 AnyView(DropdownPicker(
                     selection: $background.smokingStatus,
@@ -551,7 +599,6 @@ struct ClientPARQFormView: View {
                 ))
             }
 
-            // Pregnancy
             bgSection("Pregnancy / Postpartum", icon: "figure.pregnant") {
                 AnyView(DropdownPicker(
                     selection: $background.pregnantOrRecent,
@@ -566,10 +613,8 @@ struct ClientPARQFormView: View {
 
     private var reviewPage: some View {
         VStack(alignment: .leading, spacing: 20) {
-            // Risk summary
             riskSummaryCard
 
-            // Flagged concerns
             if flaggedCount > 0 {
                 VStack(alignment: .leading, spacing: 10) {
                     sectionLabel("⚠️ FLAGGED CONCERNS (\(flaggedCount))")
@@ -593,7 +638,6 @@ struct ClientPARQFormView: View {
                 }
             }
 
-            // All answers summary
             VStack(alignment: .leading, spacing: 8) {
                 sectionLabel("ALL ANSWERS")
                 ForEach(answers) { answer in
@@ -602,7 +646,8 @@ struct ClientPARQFormView: View {
                             .font(.system(size: 10, weight: .black)).foregroundColor(.tmGold)
                             .frame(width: 24)
                         Text(answer.question.shortLabel)
-                            .font(.system(size: 13)).foregroundColor(.white).frame(maxWidth: .infinity, alignment: .leading)
+                            .font(.system(size: 13)).foregroundColor(.white)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         Text(answer.response.rawValue)
                             .font(.system(size: 12, weight: .bold))
                             .foregroundColor(answer.isFlagged ? .orange : answer.response == .no ? .green : .white.opacity(0.5))
@@ -617,7 +662,6 @@ struct ClientPARQFormView: View {
                 }
             }
 
-            // Disclaimer
             Text("By submitting this form I confirm that the information provided is accurate to the best of my knowledge. This questionnaire does not replace professional medical advice.")
                 .font(.caption2).foregroundColor(.white.opacity(0.3))
                 .padding(12)
@@ -672,9 +716,7 @@ struct ClientPARQFormView: View {
                     }
                 }) {
                     HStack(spacing: 8) {
-                        if currentPage == 2 {
-                            Image(systemName: "paperplane.fill")
-                        }
+                        if currentPage == 2 { Image(systemName: "paperplane.fill") }
                         Text(currentPage == 2 ? "SUBMIT FORM" : "CONTINUE")
                             .font(.system(size: 15, weight: .heavy)).tracking(0.5)
                     }
@@ -720,8 +762,8 @@ struct ClientPARQFormView: View {
     }
 
     private func submitForm() {
-        var updated           = form
-        updated.answers       = answers
+        var updated               = form
+        updated.answers           = answers
         updated.fitnessBackground = background
         store.submit(updated)
         onSubmit()
@@ -750,7 +792,6 @@ struct PARQQuestionCard: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            // Yes / No selector
             HStack(spacing: 10) {
                 responseButton("No",  selected: answer.response == .no,  isFlagged: false) {
                     answer.response = .no
@@ -761,7 +802,6 @@ struct PARQQuestionCard: View {
                 }
             }
 
-            // Detail field if Yes
             if answer.response == .yes {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(answer.question.detailPrompt)
@@ -783,8 +823,8 @@ struct PARQQuestionCard: View {
     }
 
     private var cardBackground: some View {
-        let fillColor:   Color  = answer.isFlagged ? Color.orange.opacity(0.06) : Color.white.opacity(0.04)
-        let strokeColor: Color  = answer.isFlagged ? Color.orange.opacity(0.3)  : Color.white.opacity(0.07)
+        let fillColor:   Color   = answer.isFlagged ? Color.orange.opacity(0.06) : Color.white.opacity(0.04)
+        let strokeColor: Color   = answer.isFlagged ? Color.orange.opacity(0.3)  : Color.white.opacity(0.07)
         let lineWidth:   CGFloat = answer.isFlagged ? 1.5 : 1.0
         return RoundedRectangle(cornerRadius: 14)
             .fill(fillColor)
@@ -873,7 +913,8 @@ struct MultiSelectChips<T: RawRepresentable & CaseIterable & Hashable & Equatabl
     }
 }
 
-// Simple flow layout for chips
+// MARK: - Flow Layout
+
 struct FlowLayout: Layout {
     var spacing: CGFloat = 8
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
@@ -898,7 +939,7 @@ struct FlowLayout: Layout {
 }
 
 // MARK: ─────────────────────────────────────────────
-// MARK: TRAINER: PAR-Q SUMMARY CARD (for client folder)
+// MARK: TRAINER: PAR-Q SUMMARY CARD
 // MARK: ─────────────────────────────────────────────
 
 struct TrainerPARQSummaryCard: View {
@@ -906,10 +947,10 @@ struct TrainerPARQSummaryCard: View {
     let clientId:   String
     let clientName: String
     @ObservedObject private var store = PARQStore.shared
-    @State private var showingForm:    PARQForm? = nil
-    @State private var showingRequest  = false
+    @State private var showingForm:   PARQForm? = nil
+    @State private var showingRequest = false
 
-    private var latest: PARQForm? { store.latestForm(forClient: clientId) }
+    private var latest:  PARQForm? { store.latestForm(forClient: clientId) }
     private var pending: Bool {
         store.pendingForm(forClient: clientId, trainerId: trainerId) != nil
     }
@@ -931,20 +972,15 @@ struct TrainerPARQSummaryCard: View {
             }
 
             if let form = latest {
-                if form.isSubmitted {
-                    submittedCard(form)
-                } else {
-                    pendingCard
-                }
+                if form.isSubmitted { submittedCard(form) }
+                else                { pendingCard }
             } else {
                 noFormCard
             }
         }
         .sheet(item: $showingForm) { form in
-            NavigationView {
-                TrainerPARQReviewView(form: form)
-            }
-            .tint(.tmGold).navigationViewStyle(StackNavigationViewStyle())
+            NavigationView { TrainerPARQReviewView(form: form) }
+                .tint(.tmGold).navigationViewStyle(StackNavigationViewStyle())
         }
         .confirmationDialog(
             "Send PAR-Q request to \(clientName)?",
@@ -963,16 +999,12 @@ struct TrainerPARQSummaryCard: View {
         return Button(action: { showingForm = form }) {
             VStack(spacing: 10) {
                 submittedCardHeader(form)
-                if form.hasConcerns {
-                    submittedCardConcerns(form)
-                }
+                if form.hasConcerns { submittedCardConcerns(form) }
             }
             .padding(12)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color.white.opacity(0.04))
-                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(strokeColor, lineWidth: 1))
-            )
+            .background(RoundedRectangle(cornerRadius: 12)
+                .fill(Color.white.opacity(0.04))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(strokeColor, lineWidth: 1)))
         }
         .buttonStyle(.plain)
     }
@@ -1067,11 +1099,8 @@ struct TrainerPARQReviewView: View {
             Color.black.ignoresSafeArea()
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 20) {
-
-                    // Risk banner
                     riskBanner
 
-                    // Flagged concerns
                     if form.hasConcerns {
                         VStack(alignment: .leading, spacing: 10) {
                             sectionLabel("⚠️ FLAGGED CONCERNS (\(form.flaggedAnswers.count))")
@@ -1081,20 +1110,15 @@ struct TrainerPARQReviewView: View {
                         }
                     }
 
-                    // Full PAR-Q answers
                     VStack(alignment: .leading, spacing: 10) {
                         sectionLabel("FULL PAR-Q ANSWERS")
-                        ForEach(form.answers) { answer in
-                            fullAnswerRow(answer)
-                        }
+                        ForEach(form.answers) { answer in fullAnswerRow(answer) }
                     }
 
-                    // Fitness background
                     if let bg = form.fitnessBackground {
                         fitnessBackgroundSection(bg)
                     }
 
-                    // Submitted info
                     if let date = form.submittedAt {
                         HStack {
                             Image(systemName: "checkmark.seal.fill").foregroundColor(.tmGold)
@@ -1105,12 +1129,8 @@ struct TrainerPARQReviewView: View {
                         .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.03)))
                     }
 
-                    // Mark reviewed button
                     if form.status == .completed {
-                        Button(action: {
-                            store.markReviewed(form)
-                            dismiss()
-                        }) {
+                        Button(action: { store.markReviewed(form); dismiss() }) {
                             HStack(spacing: 8) {
                                 Image(systemName: "checkmark.circle.fill")
                                 Text("MARK AS REVIEWED")
@@ -1188,8 +1208,7 @@ struct TrainerPARQReviewView: View {
     private func fullAnswerRow(_ answer: PARQAnswer) -> some View {
         HStack(alignment: .top, spacing: 12) {
             Text("Q\(answer.question.number)")
-                .font(.system(size: 10, weight: .black)).foregroundColor(.tmGold)
-                .frame(width: 24)
+                .font(.system(size: 10, weight: .black)).foregroundColor(.tmGold).frame(width: 24)
             Text(answer.question.shortLabel)
                 .font(.system(size: 13)).foregroundColor(.white)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -1208,18 +1227,20 @@ struct TrainerPARQReviewView: View {
     private func fitnessBackgroundSection(_ bg: FitnessBackground) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             sectionLabel("FITNESS BACKGROUND")
-            bgRow("Activity Level",   bg.activityLevel.rawValue,      "figure.run")
-            bgRow("Primary Goal",     bg.fitnessGoal.rawValue,         "target")
-            bgRow("Injury History",   bg.injuryHistory.rawValue,       "bandage.fill")
+            bgRow("Activity Level",   bg.activityLevel.rawValue,   "figure.run")
+            bgRow("Primary Goal",     bg.fitnessGoal.rawValue,     "target")
+            bgRow("Injury History",   bg.injuryHistory.rawValue,   "bandage.fill")
             if !bg.injuryDetail.isEmpty {
                 bgRow("Injury Detail", bg.injuryDetail, "text.bubble")
             }
-            bgRow("Smoking Status",   bg.smokingStatus.rawValue,       "lungs.fill")
-            bgRow("Pregnancy Status", bg.pregnantOrRecent.rawValue,    "figure.pregnant")
+            bgRow("Smoking Status",   bg.smokingStatus.rawValue,   "lungs.fill")
+            bgRow("Pregnancy Status", bg.pregnantOrRecent.rawValue, "figure.pregnant")
             if !bg.exerciseTypes.isEmpty {
                 HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: "dumbbell.fill").font(.caption).foregroundColor(.tmGold).frame(width: 20)
-                    Text("Exercise Types").font(.caption).foregroundColor(.white.opacity(0.4)).frame(width: 80, alignment: .leading)
+                    Image(systemName: "dumbbell.fill").font(.caption)
+                        .foregroundColor(.tmGold).frame(width: 20)
+                    Text("Exercise Types").font(.caption)
+                        .foregroundColor(.white.opacity(0.4)).frame(width: 80, alignment: .leading)
                     FlowLayout(spacing: 6) {
                         ForEach(bg.exerciseTypes, id: \.self) { t in
                             Text(t.rawValue).font(.caption2).foregroundColor(.black)
@@ -1250,7 +1271,7 @@ struct TrainerPARQReviewView: View {
     }
 }
 
-// MARK: - Client: PAR-Q Hub section
+// MARK: - Client: PAR-Q Hub Section
 
 struct ClientPARQHubSection: View {
     let clientId:  String
@@ -1268,7 +1289,8 @@ struct ClientPARQHubSection: View {
             HStack {
                 HStack(spacing: 6) {
                     Image(systemName: "heart.text.square.fill").font(.caption).foregroundColor(.tmGold)
-                    Text("PAR-Q").font(.system(size: 11, weight: .bold)).tracking(1.2).foregroundColor(.tmGold)
+                    Text("PAR-Q").font(.system(size: 11, weight: .bold))
+                        .tracking(1.2).foregroundColor(.tmGold)
                 }
                 Spacer()
                 if let f = latest, f.isSubmitted {
@@ -1279,7 +1301,6 @@ struct ClientPARQHubSection: View {
             }
 
             if let form = pending {
-                // Pending — CTA to complete
                 Button(action: { showingForm = form }) {
                     HStack(spacing: 12) {
                         ZStack {
@@ -1288,8 +1309,8 @@ struct ClientPARQHubSection: View {
                                 .foregroundColor(.tmGold)
                         }
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Health form requested").font(.system(size: 14, weight: .bold))
-                                .foregroundColor(.white)
+                            Text("Health form requested")
+                                .font(.system(size: 14, weight: .bold)).foregroundColor(.white)
                             Text("Your trainer has requested you complete a PAR-Q. Tap to fill it out.")
                                 .font(.caption).foregroundColor(.white.opacity(0.5))
                         }
@@ -1304,7 +1325,6 @@ struct ClientPARQHubSection: View {
                 }
                 .buttonStyle(.plain)
             } else if let form = latest, form.isSubmitted {
-                // Completed summary
                 HStack(spacing: 10) {
                     Image(systemName: form.riskLevel.icon).foregroundColor(form.riskLevel.color)
                     Text(form.riskLevel.label)

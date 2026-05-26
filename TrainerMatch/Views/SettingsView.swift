@@ -38,19 +38,19 @@ struct SettingsView: View {
 
                     // Support section
                     settingsSection("SUPPORT") {
-                        Link(destination: URL(string: "mailto:support@trainermatch.app")!) {
+                        Link(destination: URL(string: "mailto:support@TrainerMatch.app")!) {
                             settingsRowContent(icon: "envelope.circle.fill",
                                                label: "Contact Support",
                                                value: "", showChevron: true)
                         }
                         Divider().background(Color.white.opacity(0.08))
-                        Link(destination: URL(string: "https://trainermatch.app/privacy")!) {
+                        Link(destination: URL(string: "https://TrainerMatch.app/privacy")!) {
                             settingsRowContent(icon: "hand.raised.fill",
                                                label: "Privacy Policy",
                                                value: "", showChevron: true)
                         }
                         Divider().background(Color.white.opacity(0.08))
-                        Link(destination: URL(string: "https://trainermatch.app/terms")!) {
+                        Link(destination: URL(string: "https://TrainerMatch.app/terms")!) {
                             settingsRowContent(icon: "doc.text.fill",
                                                label: "Terms of Service",
                                                value: "", showChevron: true)
@@ -116,7 +116,7 @@ struct SettingsView: View {
                     .padding(.horizontal, 20)
 
                     // Footer
-                    Text("TrainerMatch © 2026")
+                    Text("Nearby Trainers © 2026")
                         .font(.caption2)
                         .foregroundColor(.white.opacity(0.2))
                         .padding(.bottom, 40)

@@ -92,7 +92,7 @@ struct TrainerSignupView: View {
         VStack(spacing: 16) {
             TrainerMatchLogo(size: .medium)
                 .shadow(color: .tmGold.opacity(0.3), radius: 15, x: 0, y: 5)
-            Text("Join TrainerMatch")
+            Text("Join Nearby Trainers")
                 .font(.system(size: 32, weight: .bold)).italic().foregroundColor(.white)
             Text("Start growing your fitness business today")
                 .font(.subheadline).foregroundColor(.white.opacity(0.8))
@@ -565,7 +565,7 @@ struct ServicesSection: View {
                     Image(systemName: agreedToTerms ? "checkmark.square.fill" : "square")
                         .foregroundColor(agreedToTerms ? Color.tmGold : .white.opacity(0.5)).font(.title3)
                 }
-                Text("I agree to the TrainerMatch Terms of Service and Privacy Policy")
+                Text("I agree to the Nearby Trainers Terms of Service and Privacy Policy")
                     .font(.caption).foregroundColor(.white.opacity(0.7))
             }
         }

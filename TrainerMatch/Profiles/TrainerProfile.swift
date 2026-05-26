@@ -149,7 +149,6 @@ struct TrainerProfileMySpaceView: View {
         if let jpegData = resized.jpegData(compressionQuality: 0.8) {
             do { _ = try await SupabaseAuthManager.shared.uploadProfilePhoto(imageData: jpegData) }
             catch {
-                print("❌ Profile photo upload failed: \(error)")
                 let userId = SupabaseAuthManager.shared.currentTrainer?.id.uuidString ?? ""
                 ProfileImageManager.shared.saveImage(
                     resized, forKey: ProfileImageManager.profileImageKey(for: userId))
@@ -173,7 +172,6 @@ struct TrainerProfileMySpaceView: View {
         if let jpegData = resized.jpegData(compressionQuality: 0.8) {
             do { _ = try await SupabaseAuthManager.shared.uploadBannerPhoto(imageData: jpegData) }
             catch {
-                print("❌ Banner photo upload failed: \(error)")
                 let userId = SupabaseAuthManager.shared.currentTrainer?.id.uuidString ?? ""
                 ProfileImageManager.shared.saveImage(resized, forKey: "banner_\(userId).jpg")
             }
@@ -346,7 +344,16 @@ struct TrainerProfileMySpaceView: View {
         case .clients:
             VStack(spacing: 0) {
                 GymAdBannerView().padding(.horizontal, 20).padding(.top, 8)
+                // ✅ PENDING REQUESTS — trainer approves/declines new clients
+                TrainerPendingRequestsLink(
+                    trainerId:   trainer.userId,
+                    trainerName: trainer.businessName ?? "Trainer",
+                    authId:      SupabaseAuthManager.shared.currentTrainer?.authId?.uuidString
+                                 ?? trainer.userId
+                )
                 TrainerClientsDashboardLink()
+                // ✅ MESSAGES — trainer can now message all connected clients
+                TrainerMessagesLink(trainerId: trainer.userId)
                 TrainerReviewsLink(trainerId: trainer.userId)
                 TrainerVerificationLink(trainerId: trainer.userId)
                 TrainerBookingsLink(trainerId: trainer.userId)
@@ -356,6 +363,196 @@ struct TrainerProfileMySpaceView: View {
             }
         case .schedule:
             ScheduleSection(trainer: trainer)
+        }
+    }
+}
+
+// MARK: - ✅ NEW: Trainer Messages Link
+
+struct TrainerMessagesLink: View {
+    let trainerId: String
+    @ObservedObject private var auth = SupabaseAuthManager.shared
+    @State private var showingMessages = false
+    @State private var clients: [ClientRow] = []
+    @State private var isLoading = false
+
+    var body: some View {
+        Button(action: { showingMessages = true }) {
+            HStack(spacing: 14) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.tmGold.opacity(0.12)).frame(width: 48, height: 48)
+                    Image(systemName: "bubble.left.and.bubble.right.fill")
+                        .font(.system(size: 18)).foregroundColor(.tmGold)
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Messages")
+                        .font(.system(size: 15, weight: .bold)).foregroundColor(.white)
+                    Text(clients.isEmpty
+                         ? "Chat with your clients"
+                         : "\(clients.count) connected client\(clients.count == 1 ? "" : "s")")
+                        .font(.caption).foregroundColor(.white.opacity(0.4))
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.caption).foregroundColor(.tmGold.opacity(0.5))
+            }
+            .padding(16)
+            .background(RoundedRectangle(cornerRadius: 16).fill(Color.white.opacity(0.04))
+                .overlay(RoundedRectangle(cornerRadius: 16)
+                    .stroke(Color.white.opacity(0.08), lineWidth: 1)))
+            .padding(.horizontal, 20).padding(.top, 8)
+        }
+        .buttonStyle(.plain)
+        .task {
+            guard let trainerRow = auth.currentTrainer else { return }
+            clients = (try? await SupabaseAuthManager.shared.fetchTrainerClients()) ?? []
+        }
+        .sheet(isPresented: $showingMessages) {
+            NavigationView {
+                TrainerClientMessagesView(trainerId: trainerId)
+            }
+            .tint(.tmGold).navigationViewStyle(StackNavigationViewStyle())
+        }
+    }
+}
+
+// MARK: - ✅ NEW: Trainer Client Messages List
+
+struct TrainerClientMessagesView: View {
+    let trainerId: String
+    @ObservedObject private var auth = SupabaseAuthManager.shared
+    @Environment(\.dismiss) var dismiss
+    @State private var clients: [ClientRow] = []
+    @State private var isLoading = true
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+
+            if isLoading {
+                VStack(spacing: 14) {
+                    ProgressView().tint(.tmGold).scaleEffect(1.3)
+                    Text("Loading clients...").foregroundColor(.white.opacity(0.5))
+                        .font(.subheadline)
+                }
+            } else if clients.isEmpty {
+                VStack(spacing: 16) {
+                    Image(systemName: "bubble.left.and.bubble.right")
+                        .font(.system(size: 52)).foregroundColor(.tmGold.opacity(0.25))
+                        .padding(.top, 60)
+                    Text("No Connected Clients")
+                        .font(.title3.bold()).foregroundColor(.white)
+                    Text("Once clients connect with you, you can message them here.")
+                        .font(.subheadline).foregroundColor(.white.opacity(0.45))
+                        .multilineTextAlignment(.center).padding(.horizontal, 40)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    VStack(spacing: 12) {
+                        ForEach(clients) { client in
+                            TrainerClientChatRow(
+                                trainerId: trainerId,
+                                client: client,
+                                trainerName: auth.currentTrainer?.fullName ?? "Trainer"
+                            )
+                        }
+                    }
+                    .padding(.horizontal, 20).padding(.top, 16).padding(.bottom, 40)
+                }
+            }
+        }
+        .navigationTitle("Messages")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(Color.black, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button(action: { dismiss() }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left").fontWeight(.semibold)
+                        Text("Back")
+                    }.foregroundColor(.tmGold)
+                }
+            }
+        }
+        .task {
+            clients = (try? await SupabaseAuthManager.shared.fetchTrainerClients()) ?? []
+            isLoading = false
+        }
+    }
+}
+
+// MARK: - ✅ NEW: Individual client chat row
+
+struct TrainerClientChatRow: View {
+    let trainerId:   String
+    let client:      ClientRow
+    let trainerName: String
+    @State private var showingChat = false
+    @State private var clientImage: UIImage?
+
+    var body: some View {
+        Button(action: { showingChat = true }) {
+            HStack(spacing: 14) {
+                // Client avatar
+                ZStack {
+                    Circle()
+                        .fill(LinearGradient(colors: [.tmGold, .tmGoldDark],
+                                             startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .frame(width: 56, height: 56)
+                    if let img = clientImage {
+                        Image(uiImage: img).resizable().scaledToFill()
+                            .frame(width: 52, height: 52).clipShape(Circle())
+                    } else {
+                        Text(client.firstName.prefix(1).uppercased())
+                            .font(.title2.bold()).foregroundColor(.black)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(client.fullName)
+                        .font(.system(size: 16, weight: .bold)).foregroundColor(.white)
+                    Text("\(client.city), \(client.state)")
+                        .font(.caption).foregroundColor(.white.opacity(0.45))
+                    Text(client.fitnessLevel)
+                        .font(.caption2).foregroundColor(.tmGold)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold)).foregroundColor(.tmGold)
+            }
+            .padding(16)
+            .background(RoundedRectangle(cornerRadius: 16).fill(Color.white.opacity(0.05))
+                .overlay(RoundedRectangle(cornerRadius: 16)
+                    .stroke(Color.white.opacity(0.08), lineWidth: 1)))
+        }
+        .buttonStyle(.plain)
+        .onAppear {
+            if let urlStr = client.profileImageUrl, let url = URL(string: urlStr) {
+                Task {
+                    if let data = try? await URLSession.shared.data(from: url).0,
+                       let img = UIImage(data: data) {
+                        await MainActor.run { clientImage = img }
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $showingChat) {
+            NavigationView {
+                SupabaseChatView(
+                    trainerId:       UUID(uuidString: trainerId) ?? UUID(),
+                    clientId:        client.id,
+                    currentUserId:   UUID(uuidString: trainerId) ?? UUID(),
+                    currentUserName: trainerName,
+                    otherPersonName: client.fullName
+                )
+            }
+            .tint(.tmGold).navigationViewStyle(StackNavigationViewStyle())
         }
     }
 }
@@ -378,7 +575,7 @@ struct TrainerMenuSheet: View {
                         TrainerMatchLogo(size: .large)
                             .shadow(color: .tmGold.opacity(0.3), radius: 20)
                             .padding(.top, 40)
-                        Text("TrainerMatch")
+                        Text("Nearby Trainers")
                             .font(.system(size: 32, weight: .bold)).italic()
                             .foregroundColor(.white)
                         HStack(spacing: 8) {
@@ -537,7 +734,6 @@ struct AboutMeSection: View {
         .padding(20)
     }
 
-    // ✅ Monthly rate added here
     private var professionalInfo: some View {
         InfoCard(title: "PROFESSIONAL INFO", icon: "briefcase.fill") {
             VStack(alignment: .leading, spacing: 12) {
@@ -657,6 +853,78 @@ struct ContactRow: View {
     }
 }
 
+// MARK: - Trainer Pending Requests Link
+
+struct TrainerPendingRequestsLink: View {
+    let trainerId:   String
+    let trainerName: String
+    let authId:      String
+    @ObservedObject private var connStore = SBConnectionStore.shared
+    @State private var showingPending = false
+
+    private var pendingCount: Int {
+        connStore.rows.filter {
+            $0.trainerId.uuidString == trainerId && $0.status == "pending"
+        }.count
+    }
+
+    var body: some View {
+        Button(action: { showingPending = true }) {
+            HStack(spacing: 14) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(pendingCount > 0
+                              ? Color.tmGold.opacity(0.2)
+                              : Color.tmGold.opacity(0.12))
+                        .frame(width: 48, height: 48)
+                    Image(systemName: "person.badge.clock.fill")
+                        .font(.system(size: 18)).foregroundColor(.tmGold)
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Pending Requests")
+                        .font(.system(size: 15, weight: .bold)).foregroundColor(.white)
+                    Text(pendingCount > 0
+                         ? "\(pendingCount) client\(pendingCount == 1 ? "" : "s") waiting for approval"
+                         : "No pending requests")
+                        .font(.caption)
+                        .foregroundColor(pendingCount > 0 ? .tmGold : .white.opacity(0.4))
+                }
+                Spacer()
+                if pendingCount > 0 {
+                    Text("\(pendingCount)")
+                        .font(.system(size: 12, weight: .black)).foregroundColor(.black)
+                        .padding(.horizontal, 10).padding(.vertical, 5)
+                        .background(Capsule().fill(Color.tmGold))
+                }
+                Image(systemName: "chevron.right")
+                    .font(.caption).foregroundColor(.tmGold.opacity(0.5))
+            }
+            .padding(16)
+            .background(RoundedRectangle(cornerRadius: 16)
+                .fill(pendingCount > 0
+                      ? Color.tmGold.opacity(0.07)
+                      : Color.white.opacity(0.04))
+                .overlay(RoundedRectangle(cornerRadius: 16)
+                    .stroke(pendingCount > 0
+                            ? Color.tmGold.opacity(0.3)
+                            : Color.white.opacity(0.08), lineWidth: 1)))
+            .padding(.horizontal, 20).padding(.top, 8)
+        }
+        .buttonStyle(.plain)
+        .onAppear { connStore.loadForTrainer(trainerId) }
+        .sheet(isPresented: $showingPending) {
+            NavigationView {
+                TrainerPendingRequestsView(
+                    trainerId:   trainerId,
+                    trainerName: trainerName,
+                    authId:      authId
+                )
+            }
+            .tint(.tmGold).navigationViewStyle(StackNavigationViewStyle())
+        }
+    }
+}
+
 #Preview {
     NavigationView {
         TrainerProfileMySpaceView(trainer: TrainerProfile.sampleProfile)
@@ -671,8 +939,9 @@ struct TrainerClientsDashboardLink: View {
     @ObservedObject private var store = TrainerConnectionStore.shared
 
     private var clientCount: Int {
-        guard let id = authManager.currentTrainerProfile?.id else { return 0 }
-        return store.activeClients(forTrainer: id).count
+        SBConnectionStore.shared.activeClients(
+            forTrainer: SupabaseAuthManager.shared.currentTrainer?.id.uuidString ?? ""
+        ).count
     }
 
     var body: some View {

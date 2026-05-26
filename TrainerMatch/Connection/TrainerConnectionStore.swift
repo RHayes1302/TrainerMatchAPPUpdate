@@ -2,6 +2,9 @@
 //  TrainerConnectionStore.swift
 //  TrainerMatch
 //
+//  NOTE: SBConnectionStore, SBTrainerClientRow, and TrainerConnectionStatus
+//  are all defined in SupabaseConnectionStore.swift — do not redeclare here.
+//
 
 import SwiftUI
 import Combine
@@ -44,7 +47,7 @@ struct ChatMessage: Codable, Identifiable {
     var isRead: Bool
 }
 
-// MARK: - Store
+// MARK: - TrainerConnectionStore (local cache layer)
 
 class TrainerConnectionStore: ObservableObject {
     static let shared = TrainerConnectionStore()
@@ -116,7 +119,7 @@ class TrainerConnectionStore: ObservableObject {
             try? await SBConnectionStore.shared.releaseConnection(id)
         }
         connections.removeAll { $0.id == id }
-        messages.removeAll { $0.connectionId == id }
+        messages.removeAll    { $0.connectionId == id }
         save()
     }
 
@@ -134,27 +137,27 @@ class TrainerConnectionStore: ObservableObject {
         )
     }
 
-    // MARK: - Queries (read from synced local arrays)
+    // MARK: - Queries
 
-        func pendingRequests(forTrainer trainerId: String) -> [TrainerRequest] {
-            requests.filter { $0.trainerId == trainerId && $0.status == .pending }
-        }
+    func pendingRequests(forTrainer trainerId: String) -> [TrainerRequest] {
+        requests.filter { $0.trainerId == trainerId && $0.status == .pending }
+    }
 
-        func activeClients(forTrainer trainerId: String) -> [TrainerClientConnection] {
-            connections.filter { $0.trainerId == trainerId }
-        }
+    func activeClients(forTrainer trainerId: String) -> [TrainerClientConnection] {
+        connections.filter { $0.trainerId == trainerId }
+    }
 
-        func myTrainers(forClient clientId: String) -> [TrainerClientConnection] {
-            connections.filter { $0.clientId == clientId }
-        }
+    func myTrainers(forClient clientId: String) -> [TrainerClientConnection] {
+        connections.filter { $0.clientId == clientId }
+    }
 
-        func connection(trainerId: String, clientId: String) -> TrainerClientConnection? {
-            connections.first { $0.trainerId == trainerId && $0.clientId == clientId }
-        }
+    func connection(trainerId: String, clientId: String) -> TrainerClientConnection? {
+        connections.first { $0.trainerId == trainerId && $0.clientId == clientId }
+    }
 
-        func requestStatus(trainerId: String, clientId: String) -> TrainerRequest.RequestStatus? {
-            requests.last { $0.trainerId == trainerId && $0.clientId == clientId }?.status
-        }
+    func requestStatus(trainerId: String, clientId: String) -> TrainerRequest.RequestStatus? {
+        requests.last { $0.trainerId == trainerId && $0.clientId == clientId }?.status
+    }
 
     // MARK: - Messages (local)
 
@@ -254,7 +257,6 @@ struct TrainerRequestButton: View {
                         .shadow(color: Color.tmGold.opacity(0.4), radius: 10, y: 5))
                 }
                 .buttonStyle(.plain)
-
                 Text("You're connected with \(trainer.firstName)!")
                     .font(.caption).foregroundColor(.tmGold).multilineTextAlignment(.center)
 
@@ -275,8 +277,7 @@ struct TrainerRequestButton: View {
 
             } else if status == .declined {
                 VStack(spacing: 8) {
-                    Text("Request Declined")
-                        .font(.headline).foregroundColor(.white.opacity(0.5))
+                    Text("Request Declined").font(.headline).foregroundColor(.white.opacity(0.5))
                     Text("\(trainer.firstName) is not available at this time.")
                         .font(.caption).foregroundColor(.white.opacity(0.4)).multilineTextAlignment(.center)
                 }
@@ -296,7 +297,6 @@ struct TrainerRequestButton: View {
                             .multilineTextAlignment(.center).lineSpacing(3)
                     }
                     .padding(.top, 8)
-
                     Button(action: { showingLogin = true }) {
                         HStack(spacing: 8) {
                             Image(systemName: "arrow.right.circle.fill")
@@ -306,7 +306,6 @@ struct TrainerRequestButton: View {
                         .background(RoundedRectangle(cornerRadius: 26).fill(Color.tmGold)
                             .shadow(color: Color.tmGold.opacity(0.4), radius: 10, y: 5))
                     }
-
                     Button(action: { showingSignup = true }) {
                         HStack(spacing: 8) {
                             Image(systemName: "person.badge.plus")
@@ -324,9 +323,7 @@ struct TrainerRequestButton: View {
                     LoginView().environmentObject(AuthManager.shared)
                 }
                 .sheet(isPresented: $showingSignup) {
-                    NavigationView {
-                        ClientSignupView().environmentObject(AuthManager.shared)
-                    }
+                    NavigationView { ClientSignupView().environmentObject(AuthManager.shared) }
                 }
 
             } else {
@@ -363,9 +360,7 @@ struct TrainerRequestButton: View {
             }
         }
         .onAppear {
-            if let cid = clientId {
-                SBConnectionStore.shared.loadForClient(cid)
-            }
+            if let cid = clientId { SBConnectionStore.shared.loadForClient(cid) }
         }
     }
 
@@ -386,12 +381,8 @@ struct TrainerClientsTab: View {
     @ObservedObject private var sbStore = SBConnectionStore.shared
     @State private var selectedConnection: TrainerClientConnection?
 
-    private var pending: [TrainerRequest] {
-        store.pendingRequests(forTrainer: trainerId)
-    }
-    private var activeClients: [TrainerClientConnection] {
-        store.activeClients(forTrainer: trainerId)
-    }
+    private var pending: [TrainerRequest]           { store.pendingRequests(forTrainer: trainerId) }
+    private var activeClients: [TrainerClientConnection] { store.activeClients(forTrainer: trainerId) }
 
     var body: some View {
         VStack(spacing: 20) {
@@ -408,9 +399,7 @@ struct TrainerClientsTab: View {
             if !pending.isEmpty {
                 VStack(alignment: .leading, spacing: 12) {
                     sectionHeader("PENDING REQUESTS", icon: "clock.fill", count: pending.count)
-                    ForEach(pending) { req in
-                        PendingRequestCard(request: req, trainerName: trainerName)
-                    }
+                    ForEach(pending) { req in PendingRequestCard(request: req, trainerName: trainerName) }
                 }
             }
 
@@ -429,12 +418,8 @@ struct TrainerClientsTab: View {
                 }
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.top, 20)
-        .padding(.bottom, 40)
-        .onAppear {
-            SBConnectionStore.shared.loadForTrainer(trainerId)
-        }
+        .padding(.horizontal, 20).padding(.top, 20).padding(.bottom, 40)
+        .onAppear { SBConnectionStore.shared.loadForTrainer(trainerId) }
         .sheet(item: $selectedConnection) { conn in
             NavigationView {
                 SupabaseChatView(
@@ -445,8 +430,7 @@ struct TrainerClientsTab: View {
                     otherPersonName: conn.clientName
                 )
             }
-            .tint(.tmGold)
-            .navigationViewStyle(StackNavigationViewStyle())
+            .tint(.tmGold).navigationViewStyle(StackNavigationViewStyle())
         }
     }
 
@@ -500,8 +484,7 @@ struct PendingRequestCard: View {
                     .overlay(Text(request.clientName.prefix(1))
                         .font(.headline).fontWeight(.bold).foregroundColor(.black))
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(request.clientName)
-                        .font(.system(size: 15, weight: .bold)).foregroundColor(.white)
+                    Text(request.clientName).font(.system(size: 15, weight: .bold)).foregroundColor(.white)
                     Text(request.clientEmail).font(.caption).foregroundColor(.white.opacity(0.5))
                     Text(request.sentAt.formatted(.relative(presentation: .named)))
                         .font(.caption2).foregroundColor(.white.opacity(0.35))
@@ -509,14 +492,12 @@ struct PendingRequestCard: View {
                 Spacer()
                 Image(systemName: "clock.fill").foregroundColor(.tmGold.opacity(0.7))
             }
-
             if !request.message.isEmpty {
                 Text("\"\(request.message)\"")
                     .font(.subheadline).italic().foregroundColor(.white.opacity(0.65))
                     .lineLimit(3).padding(12)
                     .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.04)))
             }
-
             HStack(spacing: 12) {
                 Button(action: { store.declineRequest(request) }) {
                     Text("DECLINE").font(.system(size: 12, weight: .heavy)).tracking(0.5)
@@ -569,10 +550,8 @@ struct ActiveClientCard: View {
                             .offset(x: 4, y: -4)
                     }
                 }
-
             VStack(alignment: .leading, spacing: 4) {
-                Text(connection.clientName)
-                    .font(.system(size: 15, weight: .bold)).foregroundColor(.white)
+                Text(connection.clientName).font(.system(size: 15, weight: .bold)).foregroundColor(.white)
                 if let last = store.messages(forConnection: connection.id).last {
                     Text(last.text).font(.caption).foregroundColor(.white.opacity(0.5)).lineLimit(1)
                 } else {
@@ -599,9 +578,7 @@ struct MyTrainersSection: View {
     @ObservedObject private var store   = TrainerConnectionStore.shared
     @ObservedObject private var sbStore = SBConnectionStore.shared
 
-    private var myTrainers: [TrainerClientConnection] {
-        store.myTrainers(forClient: clientId)
-    }
+    private var myTrainers: [TrainerClientConnection] { store.myTrainers(forClient: clientId) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -626,9 +603,7 @@ struct MyTrainersSection: View {
                 Divider().background(Color.white.opacity(0.08)).padding(.vertical, 4)
             }
         }
-        .onAppear {
-            SBConnectionStore.shared.loadForClient(clientId)
-        }
+        .onAppear { SBConnectionStore.shared.loadForClient(clientId) }
     }
 }
 

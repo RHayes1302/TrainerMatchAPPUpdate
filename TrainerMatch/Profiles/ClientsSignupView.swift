@@ -43,6 +43,10 @@ struct ClientSignupView: View {
     @State private var errorMessage    = ""
     @State private var showingError    = false
 
+    // ✅ Email confirmation state
+    @State private var showingConfirmation = false
+    @State private var registeredEmail     = ""
+
     @Environment(\.dismiss) var dismiss
 
     var body: some View {
@@ -55,9 +59,9 @@ struct ClientSignupView: View {
                     VStack(spacing: 16) {
                         TrainerMatchLogo(size: .medium)
                             .shadow(color: .tmGold.opacity(0.3), radius: 15, x: 0, y: 5)
-                        Text("Join TrainerMatch")
+                        Text("Join Nearby Trainers")
                             .font(.system(size: 32, weight: .bold)).italic().foregroundColor(.white)
-                        Text("Find your perfect trainer match")
+                        Text("Find your perfect Nearby Trainer")
                             .font(.subheadline).foregroundColor(.white.opacity(0.8))
                     }
                     .padding(.top, 40).padding(.bottom, 30)
@@ -149,6 +153,12 @@ struct ClientSignupView: View {
         } message: {
             Text(errorMessage)
         }
+        // ✅ Email confirmation alert
+        .alert("Check Your Email! 📧", isPresented: $showingConfirmation) {
+            Button("Got it!") { dismiss() }
+        } message: {
+            Text("We sent a confirmation link to:\n\n\(registeredEmail)\n\nTap the link in the email from Nearby Trainers to activate your account, then come back to log in.")
+        }
         .onChange(of: selectedPhoto) { _, item in
             Task {
                 if let data = try? await item?.loadTransferable(type: Data.self),
@@ -221,13 +231,28 @@ struct ClientSignupView: View {
                     try? await auth.uploadProfilePhoto(imageData: data)
                 }
 
-                // RootView navigates automatically on auth state change
-                await MainActor.run { dismiss() }
+                await MainActor.run {
+                    registeredEmail    = email
+                    // ✅ Show confirmation prompt instead of auto-dismissing
+                    // If email confirmation is disabled in Supabase, dismiss directly
+                    if auth.isAuthenticated {
+                        dismiss()
+                    } else {
+                        showingConfirmation = true
+                    }
+                }
 
             } catch {
                 await MainActor.run {
-                    errorMessage = error.localizedDescription
-                    showingError = true
+                    // ✅ If error is email_not_confirmed, show the check email prompt
+                    let msg = error.localizedDescription
+                    if msg.contains("email_not_confirmed") || msg.contains("not confirmed") {
+                        registeredEmail     = email
+                        showingConfirmation = true
+                    } else {
+                        errorMessage = msg
+                        showingError = true
+                    }
                 }
             }
         }
@@ -428,7 +453,7 @@ struct ClientHealthSection: View {
                     Image(systemName: agreedToTerms ? "checkmark.square.fill" : "square")
                         .foregroundColor(agreedToTerms ? Color.tmGold : .white.opacity(0.5)).font(.title3)
                 }
-                Text("I agree to the TrainerMatch Terms of Service and Privacy Policy. I understand trainers will have access to my health information.")
+                Text("I agree to the Nearby Trainers Terms of Service and Privacy Policy. I understand trainers will have access to my health information.")
                     .font(.caption).foregroundColor(.white.opacity(0.7))
             }
         }

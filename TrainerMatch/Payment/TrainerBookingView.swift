@@ -1015,7 +1015,7 @@ struct StripeOnboardingView: View {
                 VStack(spacing: 10) {
                     Text("Get Paid via Stripe")
                         .font(.system(size: 26, weight: .black)).foregroundColor(.white)
-                    Text("TrainerMatch uses Stripe Connect to send payments directly to your bank account. There are no platform fees — you keep 100%.")
+                    Text("Nearby Trainers uses Stripe Connect to send payments directly to your bank account. There are no platform fees — you keep 100%.")
                         .font(.subheadline).foregroundColor(.white.opacity(0.5))
                         .multilineTextAlignment(.center).padding(.horizontal)
                 }

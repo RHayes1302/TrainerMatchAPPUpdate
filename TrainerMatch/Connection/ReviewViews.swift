@@ -698,7 +698,7 @@ struct TrainerVerificationView: View {
                                      ? .tmGold : .white.opacity(0.3))
             }
 
-            Text("Take a clear photo of your certification card or certificate. This is reviewed by TrainerMatch staff and never shared publicly.")
+            Text("Take a clear photo of your certification card or certificate. This is reviewed by Nearby Trainers staff and never shared publicly.")
                 .font(.caption).foregroundColor(.white.opacity(0.4))
 
             PhotosPicker(selection: $selectedPhotoItem, matching: .images) {

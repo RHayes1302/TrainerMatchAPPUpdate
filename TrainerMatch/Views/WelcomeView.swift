@@ -11,6 +11,8 @@ struct WelcomeView: View {
     @State private var showingLogin         = false
     @State private var showingSignupChoice  = false
     @State private var showingGymSignup     = false
+    @State private var showingAdmin         = false
+    @State private var adminTapCount        = 0
     @ObservedObject private var auth = SupabaseAuthManager.shared
 
     enum NavigationDestination: Identifiable {
@@ -54,10 +56,23 @@ struct WelcomeView: View {
                     Spacer()
 
                     VStack(spacing: 20) {
+                        // ── Logo with hidden 5-tap admin trigger ──
                         TrainerMatchLogo(size: .large)
                             .shadow(color: .tmGold.opacity(0.3), radius: 20, x: 0, y: 10)
+                            .onTapGesture {
+                                adminTapCount += 1
+                                if adminTapCount >= 5 {
+                                    showingAdmin = true
+                                    adminTapCount = 0
+                                }
+                                // Reset counter after 2 seconds of inactivity
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                    if !showingAdmin { adminTapCount = 0 }
+                                }
+                            }
+
                         VStack(spacing: 6) {
-                            Text("TrainerMatch")
+                            Text("Nearby Trainers")
                                 .font(.system(size: 50, weight: .heavy)).italic()
                                 .foregroundColor(.white)
                                 .shadow(color: .tmGold.opacity(0.3), radius: 10, x: 0, y: 4)
@@ -70,7 +85,7 @@ struct WelcomeView: View {
 
                     Spacer().frame(height: 40)
 
-                    Text("Match with top fitness professionals based on your wellness needs, offering diverse specialties and services, all just one click away.")
+                    Text("Find top fitness professionals based on your wellness needs, offering diverse specialties and services, all just one click away.")
                         .font(.system(size: 16)).foregroundColor(.white.opacity(0.9))
                         .multilineTextAlignment(.center).lineSpacing(4).padding(.horizontal, 35)
 
@@ -171,9 +186,11 @@ struct WelcomeView: View {
                 NavigationView { GymAdvertiserSignupView() }
                     .tint(.tmGold).navigationViewStyle(StackNavigationViewStyle())
             }
+            .sheet(isPresented: $showingAdmin) {
+                TMAdminLockView()
+            }
         }
         .navigationViewStyle(StackNavigationViewStyle())
-        // ✅ FIXED: fullScreenCover on the NavigationView itself, not inside it
         .fullScreenCover(isPresented: $showingLogin) {
             SupabaseLoginView()
                 .environmentObject(SupabaseAuthManager.shared)
@@ -217,7 +234,7 @@ struct MenuSheetView: View {
                     VStack(spacing: 20) {
                         TrainerMatchLogo(size: .large)
                             .shadow(color: .tmGold.opacity(0.3), radius: 20, x: 0, y: 10)
-                        Text("TrainerMatch")
+                        Text("Nearby Trainers")
                             .font(.system(size: 32, weight: .bold)).italic().foregroundColor(.white)
 
                         if auth.isAuthenticated {
@@ -382,7 +399,7 @@ struct SignupChoiceView: View {
                     TrainerMatchLogo(size: .large)
                         .shadow(color: .tmGold.opacity(0.3), radius: 20, x: 0, y: 10)
                         .padding(.top, 60)
-                    Text("Join TrainerMatch")
+                    Text("Join Nearby Trainers")
                         .font(.system(size: 36, weight: .bold)).italic().foregroundColor(.white)
                     Text("Choose how you want to get started")
                         .font(.subheadline).foregroundColor(.white.opacity(0.8))

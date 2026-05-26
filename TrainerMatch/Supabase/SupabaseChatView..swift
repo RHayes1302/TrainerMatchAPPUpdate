@@ -12,8 +12,11 @@ struct SupabaseChatView: View {
     let currentUserName: String
     let otherPersonName: String
 
-    @StateObject private var store = SBMessageStore.shared
-    @State private var messageText = ""
+    // ✅ Own instance — not shared singleton
+    @StateObject private var store = SBMessageStore()
+    @State private var messageText  = ""
+    @State private var sendError:   String? = nil
+    @State private var isLoading    = true
     @FocusState private var inputFocused: Bool
 
     private var currentRole: String {
@@ -25,8 +28,28 @@ struct SupabaseChatView: View {
             Color.black.ignoresSafeArea()
             VStack(spacing: 0) {
                 messagesView
+                if let err = sendError {
+                    Text("⚠️ \(err)")
+                        .font(.caption)
+                        .foregroundColor(.red)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 6)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color.red.opacity(0.1))
+                }
                 Divider().background(Color.white.opacity(0.1))
                 inputBar
+            }
+
+            // ✅ Loading overlay — disappears as soon as messages load
+            if isLoading {
+                VStack(spacing: 14) {
+                    ProgressView().tint(.tmGold).scaleEffect(1.2)
+                    Text("Loading messages...")
+                        .font(.caption).foregroundColor(.white.opacity(0.4))
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color.black)
             }
         }
         .navigationTitle(otherPersonName)
@@ -35,7 +58,16 @@ struct SupabaseChatView: View {
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
         .task {
-            try? await store.fetchMessages(trainerId: trainerId, clientId: clientId)
+            // ✅ Fetch messages first, then start realtime in background
+            // UI is never blocked — loading spinner shows while fetching
+            do {
+                try await store.fetchMessages(trainerId: trainerId, clientId: clientId)
+                print("✅ fetchMessages succeeded — \(store.messages.count) messages")
+            } catch {
+                print("❌ fetchMessages FAILED: \(error)")
+                sendError = "Load failed: \(error.localizedDescription)"
+            }
+            isLoading = false
         }
         .onDisappear {
             Task { await store.unsubscribe() }
@@ -48,7 +80,7 @@ struct SupabaseChatView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 12) {
-                    if store.messages.isEmpty {
+                    if store.messages.isEmpty && !isLoading {
                         VStack(spacing: 12) {
                             Image(systemName: "bubble.left.and.bubble.right.fill")
                                 .font(.system(size: 48))
@@ -122,22 +154,38 @@ struct SupabaseChatView: View {
     // MARK: - Send
 
     private func sendMessage() {
+        print("🔴 sendMessage CALLED")
         let text = messageText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         messageText = ""
+        sendError = nil
+
+        let message = MessageRow(
+            id:         UUID(),
+            trainerId:  trainerId,
+            clientId:   clientId,
+            senderId:   currentUserId,
+            senderRole: currentRole,
+            content:    text,
+            mediaUrl:   nil,
+            mediaType:  nil,
+            isRead:     false,
+            sentAt:     Date()
+        )
+
+        print("📤 Sending message: \(text)")
+
         Task {
-            try? await store.send(MessageRow(
-                id:         UUID(),
-                trainerId:  trainerId,
-                clientId:   clientId,
-                senderId:   currentUserId,
-                senderRole: currentRole,
-                content:    text,
-                mediaUrl:   nil,
-                mediaType:  nil,
-                isRead:     false,
-                sentAt:     Date()
-            ))
+            do {
+                try await store.send(message)
+                print("✅ Message sent OK")
+            } catch {
+                print("❌ Send FAILED: \(error)")
+                await MainActor.run {
+                    sendError = error.localizedDescription
+                    messageText = text
+                }
+            }
         }
     }
 }

@@ -294,7 +294,7 @@ struct GymsNearYouView: View {
             Image(systemName: "building.2.fill")
                 .font(.system(size: 52)).foregroundColor(.white.opacity(0.1)).padding(.top, 60)
             Text("No gyms listed yet").font(.title3).foregroundColor(.white.opacity(0.4))
-            Text("Be the first gym in your area to advertise on TrainerMatch.")
+            Text("Be the first gym in your area to advertise on Nearby Trainers")
                 .font(.subheadline).foregroundColor(.white.opacity(0.25))
                 .multilineTextAlignment(.center).padding(.horizontal)
             Button(action: { showingSignup = true }) {

@@ -3,7 +3,7 @@
 //  TrainerMatch
 //
 //  Per-client folder — replaces EnhancedClientDetailView as the navigation destination.
-//  Tabs: Overview · Health · Workouts · Nutrition · Check-Ins · Files
+//  Tabs: Overview · Progress · Health · Workouts · Nutrition · Check-Ins · Files
 //
 
 import SwiftUI
@@ -20,10 +20,23 @@ struct ClientFolderView: View {
     @ObservedObject private var mealStore    = MealPlanStore.shared
     @ObservedObject private var weightStore  = WeightTrackingStore.shared
     @ObservedObject private var fileStore    = TrainerFileStore.shared
+    @ObservedObject private var sbConn       = SBConnectionStore.shared
 
     @State private var selectedTab: FolderTab = .overview
+    @State private var showingChat = false   // ✅ NEW
 
-    private var trainerId: String { authManager.currentTrainerProfile?.id ?? "" }
+    private var trainerId: String {
+        SupabaseAuthManager.shared.currentTrainer?.id.uuidString
+            ?? authManager.currentTrainerProfile?.id ?? ""
+    }
+
+    // ✅ Resolve the Supabase UUID for this client
+    private var clientUUID: UUID { UUID(uuidString: client.id) ?? UUID() }
+    private var trainerUUID: UUID { UUID(uuidString: trainerId) ?? UUID() }
+    private var trainerName: String {
+        SupabaseAuthManager.shared.currentTrainer?.fullName
+            ?? authManager.currentTrainerProfile?.fullName ?? "Trainer"
+    }
 
     enum FolderTab: String, CaseIterable {
         case overview   = "Overview"
@@ -52,20 +65,11 @@ struct ClientFolderView: View {
             Color.black.ignoresSafeArea()
 
             VStack(spacing: 0) {
-                // Folder header
                 folderHeader
-
-                // Tab bar
                 tabBar
-
                 Divider().background(Color.white.opacity(0.08))
-
-                // Tab content
                 ScrollView(showsIndicators: false) {
-                    VStack(spacing: 20) {
-                        tabContent
-                    }
-                    .padding(20)
+                    VStack(spacing: 20) { tabContent }.padding(20)
                 }
             }
         }
@@ -80,7 +84,8 @@ struct ClientFolderView: View {
                     Button(action: requestPARQ) {
                         Label("Request PAR-Q", systemImage: "heart.text.square")
                     }
-                    Button(action: {}) {
+                    // ✅ FIXED: now opens the chat
+                    Button(action: { showingChat = true }) {
                         Label("Send Message", systemImage: "message")
                     }
                 } label: {
@@ -88,46 +93,74 @@ struct ClientFolderView: View {
                 }
             }
         }
+        // ✅ Chat sheet
+        .sheet(isPresented: $showingChat) {
+            NavigationView {
+                SupabaseChatView(
+                    trainerId:       trainerUUID,
+                    clientId:        clientUUID,
+                    currentUserId:   trainerUUID,
+                    currentUserName: trainerName,
+                    otherPersonName: client.name
+                )
+            }
+            .tint(.tmGold)
+            .navigationViewStyle(StackNavigationViewStyle())
+        }
     }
 
     // MARK: – Header
 
     private var folderHeader: some View {
-        HStack(spacing: 14) {
-            // Avatar
-            ZStack {
-                Circle().fill(Color.tmGold.opacity(0.15)).frame(width: 60, height: 60)
-                Text(initials(client.name))
-                    .font(.system(size: 22, weight: .black)).foregroundColor(.tmGold)
-            }
+        VStack(spacing: 12) {
+            HStack(spacing: 14) {
+                // Avatar
+                ZStack {
+                    Circle().fill(Color.tmGold.opacity(0.15)).frame(width: 60, height: 60)
+                    Text(initials(client.name))
+                        .font(.system(size: 22, weight: .black)).foregroundColor(.tmGold)
+                }
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(client.name)
-                    .font(.system(size: 20, weight: .bold)).foregroundColor(.white)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(client.name)
+                        .font(.system(size: 20, weight: .bold)).foregroundColor(.white)
+                    HStack(spacing: 10) {
+                        parqBadge
+                        if mealStore.activePlan(forClient: client.id) != nil {
+                            statusBadge("Meal Plan", color: .tmGold)
+                        }
+                        if weightStore.activeGoal(forClient: client.id) != nil {
+                            statusBadge("Goal Set", color: .blue)
+                        }
+                    }
+                }
 
-                HStack(spacing: 10) {
-                    // PAR-Q status badge
-                    parqBadge
-                    // Active plan badge
-                    if mealStore.activePlan(forClient: client.id) != nil {
-                        statusBadge("Meal Plan", color: .tmGold)
-                    }
-                    // Active goal badge
-                    if weightStore.activeGoal(forClient: client.id) != nil {
-                        statusBadge("Goal Set", color: .blue)
-                    }
+                Spacer()
+
+                VStack(spacing: 2) {
+                    Image(systemName: "folder.fill").font(.system(size: 28))
+                        .foregroundColor(.tmGold.opacity(0.4))
+                    Text("CLIENT FILE").font(.system(size: 7, weight: .black))
+                        .tracking(0.5).foregroundColor(.tmGold.opacity(0.4))
                 }
             }
 
-            Spacer()
-
-            // Folder icon
-            VStack(spacing: 2) {
-                Image(systemName: "folder.fill").font(.system(size: 28))
-                    .foregroundColor(.tmGold.opacity(0.4))
-                Text("CLIENT FILE").font(.system(size: 7, weight: .black))
-                    .tracking(0.5).foregroundColor(.tmGold.opacity(0.4))
+            // ✅ VISIBLE MESSAGE BUTTON — always shown in header
+            Button(action: { showingChat = true }) {
+                HStack(spacing: 8) {
+                    Image(systemName: "bubble.left.and.bubble.right.fill")
+                        .font(.system(size: 14))
+                    Text("MESSAGE \(client.name.components(separatedBy: " ").first?.uppercased() ?? "CLIENT")")
+                        .font(.system(size: 13, weight: .heavy)).tracking(0.5)
+                    Spacer()
+                    Image(systemName: "chevron.right").font(.caption)
+                }
+                .foregroundColor(.black)
+                .padding(.horizontal, 16).padding(.vertical, 11)
+                .background(RoundedRectangle(cornerRadius: 22).fill(Color.tmGold)
+                    .shadow(color: Color.tmGold.opacity(0.4), radius: 8, y: 3))
             }
+            .buttonStyle(.plain)
         }
         .padding(.horizontal, 20).padding(.vertical, 14)
         .background(Color.black)
@@ -193,7 +226,6 @@ struct ClientFolderView: View {
                         )
                     }
                     .buttonStyle(.plain)
-                    // Badge indicator
                     .overlay(badgeFor(tab), alignment: .topTrailing)
                 }
             }
@@ -209,15 +241,14 @@ struct ClientFolderView: View {
                 let f = parqStore.latestForm(forClient: client.id)
                 return (f?.status == .completed) ? 1 : 0
             case .checkIns:
-                            return checkStore.checkIns
-                                .filter { $0.clientId.uuidString == client.id && ($0.notes ?? "").isEmpty }.count
+                return checkStore.checkIns
+                    .filter { $0.clientId.uuidString == client.id && ($0.notes ?? "").isEmpty }.count
             default: return 0
             }
         }()
         return Group {
             if count > 0 {
-                Circle().fill(Color.red).frame(width: 8, height: 8)
-                    .offset(x: -6, y: 4)
+                Circle().fill(Color.red).frame(width: 8, height: 8).offset(x: -6, y: 4)
             }
         }
     }
@@ -237,17 +268,10 @@ struct ClientFolderView: View {
         }
     }
 
-    // MARK: Overview tab
-
     private var overviewTab: some View {
         VStack(spacing: 16) {
-            // Quick stats row
             quickStatsRow
-
-            // Recent weight
             TrainerClientWeightSummary(clientId: client.id, clientName: client.name)
-
-            // Recent messages
             RecentMessagesSection(
                 messages: VideoMessageViewModel.shared.getRecentMessages(for: client.id, limit: 3),
                 viewModel: VideoMessageViewModel.shared,
@@ -257,15 +281,15 @@ struct ClientFolderView: View {
     }
 
     private var quickStatsRow: some View {
-        let checkIns  = checkStore.checkIns(forClient: client.id).count
-        let workouts  = workoutStore.workouts(forClient: client.id).count
-        let plans     = mealStore.plans(forClient: client.id).count
-        let latestW   = weightStore.latestWeight(forClient: client.id)
+        let checkIns = checkStore.checkIns(forClient: client.id).count
+        let workouts = workoutStore.workouts(forClient: client.id).count
+        let plans    = mealStore.plans(forClient: client.id).count
+        let latestW  = weightStore.latestWeight(forClient: client.id)
 
         return HStack(spacing: 10) {
-            quickStat("\(checkIns)",  "Check-Ins",  .purple)
-            quickStat("\(workouts)",  "Workouts",   .tmGold)
-            quickStat("\(plans)",     "Meal Plans", .green)
+            quickStat("\(checkIns)", "Check-Ins",  .purple)
+            quickStat("\(workouts)", "Workouts",   .tmGold)
+            quickStat("\(plans)",    "Meal Plans", .green)
             if let w = latestW {
                 quickStat(String(format: "%.0f", w.weight), "lbs", .blue)
             }
@@ -282,66 +306,36 @@ struct ClientFolderView: View {
         .background(RoundedRectangle(cornerRadius: 12).fill(color.opacity(0.08)))
     }
 
-    // MARK: Progress tab
-
     private var progressTab: some View {
-        TrainerClientProgressDashboard(
-            clientId:   client.id,
-            clientName: client.name
-        )
+        TrainerClientProgressDashboard(clientId: client.id, clientName: client.name)
     }
-
-    // MARK: Health tab
 
     private var healthTab: some View {
         VStack(spacing: 16) {
             TrainerPARQSummaryCard(
-                trainerId: trainerId,
-                clientId: client.id,
-                clientName: client.name
-            )
+                trainerId: trainerId, clientId: client.id, clientName: client.name)
             TrainerClientWeightSummary(clientId: client.id, clientName: client.name)
         }
     }
 
-    // MARK: Workouts tab
-
     private var workoutsTab: some View {
         TrainerClientWorkoutSummary(
-            trainerId: trainerId,
-            clientId: client.id,
-            clientName: client.name
-        )
+            trainerId: trainerId, clientId: client.id, clientName: client.name)
     }
-
-    // MARK: Nutrition tab
 
     private var nutritionTab: some View {
         TrainerClientMealPlanSummary(
-            trainerId: trainerId,
-            clientId: client.id,
-            clientName: client.name
-        )
+            trainerId: trainerId, clientId: client.id, clientName: client.name)
     }
-
-    // MARK: Check-ins tab
 
     private var checkInsTab: some View {
-        TrainerAllCheckInsForClientView(
-            clientId:   client.id,
-            clientName: client.name
-        )
+        TrainerAllCheckInsForClientView(clientId: client.id, clientName: client.name)
     }
-
-    // MARK: Files tab
 
     private var filesTab: some View {
         TrainerSharedFilesSection(
-            trainerId: trainerId,
-            clientId: client.id,
-            clientName: client.name,
-            onShareFile: {}
-        )
+            trainerId: trainerId, clientId: client.id,
+            clientName: client.name, onShareFile: {})
     }
 
     // MARK: Helpers
@@ -354,9 +348,6 @@ struct ClientFolderView: View {
 
     private func requestPARQ() {
         parqStore.requestForm(
-            trainerId: trainerId,
-            clientId: client.id,
-            clientName: client.name
-        )
+            trainerId: trainerId, clientId: client.id, clientName: client.name)
     }
 }

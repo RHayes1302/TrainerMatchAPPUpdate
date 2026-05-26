@@ -2,16 +2,6 @@
 //  SupabaseDataStores.swift
 //  TrainerMatch
 //
-//  All data stores migrated to Supabase:
-//  - WorkoutStore
-//  - MealPlanStore
-//  - CheckInStore
-//  - WeightStore
-//  - BookingStore (Supabase layer)
-//  - MessageStore
-//  - SharedFileStore
-//  - GymAdStore (Supabase layer)
-//
 
 import Foundation
 import SwiftUI
@@ -66,22 +56,18 @@ class SBWorkoutStore: ObservableObject {
 
     func fetchForClient(_ clientId: UUID) async throws {
         workouts = try await supabase
-            .from("workouts")
-            .select()
+            .from("workouts").select()
             .eq("client_id", value: clientId)
             .order("assigned_date", ascending: false)
-            .execute()
-            .value
+            .execute().value
     }
 
     func fetchForTrainer(_ trainerId: UUID) async throws {
         workouts = try await supabase
-            .from("workouts")
-            .select()
+            .from("workouts").select()
             .eq("trainer_id", value: trainerId)
             .order("created_at", ascending: false)
-            .execute()
-            .value
+            .execute().value
     }
 
     func create(_ workout: WorkoutRow) async throws {
@@ -92,29 +78,22 @@ class SBWorkoutStore: ObservableObject {
     func update(_ workout: WorkoutRow) async throws {
         try await supabase.from("workouts").update(workout)
             .eq("id", value: workout.id).execute()
-        if let i = workouts.firstIndex(where: { $0.id == workout.id }) {
-            workouts[i] = workout
-        }
+        if let i = workouts.firstIndex(where: { $0.id == workout.id }) { workouts[i] = workout }
     }
 
     func markComplete(_ workoutId: UUID) async throws {
         struct Update: Encodable {
             let status: String; let completedAt: Date
-            enum CodingKeys: String, CodingKey {
-                case status; case completedAt = "completed_at"
-            }
+            enum CodingKeys: String, CodingKey { case status; case completedAt = "completed_at" }
         }
         try await supabase.from("workouts")
             .update(Update(status: "completed", completedAt: Date()))
             .eq("id", value: workoutId).execute()
-        if let i = workouts.firstIndex(where: { $0.id == workoutId }) {
-            workouts[i].status = "completed"
-        }
+        if let i = workouts.firstIndex(where: { $0.id == workoutId }) { workouts[i].status = "completed" }
     }
 
     func delete(_ workoutId: UUID) async throws {
-        try await supabase.from("workouts").delete()
-            .eq("id", value: workoutId).execute()
+        try await supabase.from("workouts").delete().eq("id", value: workoutId).execute()
         workouts.removeAll { $0.id == workoutId }
     }
 }
@@ -124,43 +103,43 @@ class SBWorkoutStore: ObservableObject {
 // MARK: ─────────────────────────────────────────────────────────
 
 struct MealPlanRow: Codable, Identifiable {
-    var id:             UUID
-    var trainerId:      UUID
-    var clientId:       UUID
-    var title:          String
-    var description:    String
-    var meals:          [MealItem]
-    var dailyCalories:  Int
-    var proteinG:       Double
-    var carbsG:         Double
-    var fatG:           Double
-    var weekStart:      Date?
-    var isActive:       Bool
-    var createdAt:      Date?
+    var id:            UUID
+    var trainerId:     UUID
+    var clientId:      UUID
+    var title:         String
+    var description:   String
+    var meals:         [MealItem]
+    var dailyCalories: Int
+    var proteinG:      Double
+    var carbsG:        Double
+    var fatG:          Double
+    var weekStart:     Date?
+    var isActive:      Bool
+    var createdAt:     Date?
 
     enum CodingKeys: String, CodingKey {
         case id, title, description, meals
-        case trainerId    = "trainer_id"
-        case clientId     = "client_id"
+        case trainerId     = "trainer_id"
+        case clientId      = "client_id"
         case dailyCalories = "daily_calories"
-        case proteinG     = "protein_g"
-        case carbsG       = "carbs_g"
-        case fatG         = "fat_g"
-        case weekStart    = "week_start"
-        case isActive     = "is_active"
-        case createdAt    = "created_at"
+        case proteinG      = "protein_g"
+        case carbsG        = "carbs_g"
+        case fatG          = "fat_g"
+        case weekStart     = "week_start"
+        case isActive      = "is_active"
+        case createdAt     = "created_at"
     }
 }
 
 struct MealItem: Codable, Identifiable {
-    var id:         UUID = UUID()
-    var mealType:   String   // Breakfast, Lunch, Dinner, Snack
-    var name:       String
-    var calories:   Int
-    var protein:    Double
-    var carbs:      Double
-    var fat:        Double
-    var notes:      String
+    var id:       UUID = UUID()
+    var mealType: String
+    var name:     String
+    var calories: Int
+    var protein:  Double
+    var carbs:    Double
+    var fat:      Double
+    var notes:    String
 }
 
 @MainActor
@@ -171,13 +150,11 @@ class SBMealPlanStore: ObservableObject {
 
     func fetchForClient(_ clientId: UUID) async throws {
         mealPlans = try await supabase
-            .from("meal_plans")
-            .select()
+            .from("meal_plans").select()
             .eq("client_id", value: clientId)
             .eq("is_active", value: true)
             .order("created_at", ascending: false)
-            .execute()
-            .value
+            .execute().value
     }
 
     func create(_ plan: MealPlanRow) async throws {
@@ -186,16 +163,12 @@ class SBMealPlanStore: ObservableObject {
     }
 
     func update(_ plan: MealPlanRow) async throws {
-        try await supabase.from("meal_plans").update(plan)
-            .eq("id", value: plan.id).execute()
-        if let i = mealPlans.firstIndex(where: { $0.id == plan.id }) {
-            mealPlans[i] = plan
-        }
+        try await supabase.from("meal_plans").update(plan).eq("id", value: plan.id).execute()
+        if let i = mealPlans.firstIndex(where: { $0.id == plan.id }) { mealPlans[i] = plan }
     }
 
     func delete(_ planId: UUID) async throws {
-        try await supabase.from("meal_plans").delete()
-            .eq("id", value: planId).execute()
+        try await supabase.from("meal_plans").delete().eq("id", value: planId).execute()
         mealPlans.removeAll { $0.id == planId }
     }
 }
@@ -205,17 +178,17 @@ class SBMealPlanStore: ObservableObject {
 // MARK: ─────────────────────────────────────────────────────────
 
 struct CheckInRow: Codable, Identifiable {
-    var id:           UUID
-    var trainerId:    UUID
-    var clientId:     UUID
-    var weight:       Double?
-    var notes:        String
-    var photoUrls:    [String]
-    var energyLevel:  Int?
-    var sleepHours:   Double?
-    var waterOz:      Int?
-    var checkedInAt:  Date?
-    var createdAt:    Date?
+    var id:          UUID
+    var trainerId:   UUID
+    var clientId:    UUID
+    var weight:      Double?
+    var notes:       String
+    var photoUrls:   [String]
+    var energyLevel: Int?
+    var sleepHours:  Double?
+    var waterOz:     Int?
+    var checkedInAt: Date?
+    var createdAt:   Date?
 
     enum CodingKeys: String, CodingKey {
         case id, notes, weight
@@ -238,57 +211,47 @@ class SBCheckInStore: ObservableObject {
 
     func fetchForClient(_ clientId: UUID) async throws {
         checkIns = try await supabase
-            .from("check_ins")
-            .select()
+            .from("check_ins").select()
             .eq("client_id", value: clientId)
             .order("checked_in_at", ascending: false)
-            .execute()
-            .value
+            .execute().value
     }
 
     func submit(_ checkIn: CheckInRow, photos: [Data]) async throws {
         var c = checkIn
-        // Upload photos first
         var urls: [String] = []
         for (i, photoData) in photos.enumerated() {
             let path = "\(checkIn.clientId)/checkin_\(checkIn.id)_\(i).jpg"
-            let url  = try await SupabaseStorage.uploadImage(
-                data: photoData, bucket: .checkInPhotos, path: path
-            )
+            let url  = try await SupabaseStorage.uploadImage(data: photoData, bucket: .checkInPhotos, path: path)
             urls.append(url)
         }
         c.photoUrls = urls
         try await supabase.from("check_ins").insert(c).execute()
         checkIns.insert(c, at: 0)
     }
+
     func delete(_ checkInId: UUID) async throws {
-            if let checkIn = checkIns.first(where: { $0.id == checkInId }) {
-                await SupabaseStorage.deleteCheckInPhotos(
-                    clientId: checkIn.clientId.uuidString,
-                    checkInId: checkInId.uuidString,
-                    count: checkIn.photoUrls.count
-                )
-            }
-            try await supabase.from("check_ins").delete()
-                .eq("id", value: checkInId).execute()
-            checkIns.removeAll { $0.id == checkInId }
+        if let checkIn = checkIns.first(where: { $0.id == checkInId }) {
+            await SupabaseStorage.deleteCheckInPhotos(
+                clientId: checkIn.clientId.uuidString,
+                checkInId: checkInId.uuidString,
+                count: checkIn.photoUrls.count)
         }
+        try await supabase.from("check_ins").delete().eq("id", value: checkInId).execute()
+        checkIns.removeAll { $0.id == checkInId }
+    }
 
     func update(_ checkIn: CheckInRow) async throws {
-                struct Update: Encodable {
-                    let notes: String
-                    enum CodingKeys: String, CodingKey { case notes }
-                }
-                try await supabase.from("check_ins")
-                    .update(Update(notes: checkIn.notes))
-                    .eq("id", value: checkIn.id)
-                    .execute()
-                if let i = checkIns.firstIndex(where: { $0.id == checkIn.id }) {
-                    checkIns[i] = checkIn
-                }
-            }
-
+        struct Update: Encodable {
+            let notes: String
+            enum CodingKeys: String, CodingKey { case notes }
+        }
+        try await supabase.from("check_ins")
+            .update(Update(notes: checkIn.notes))
+            .eq("id", value: checkIn.id).execute()
+        if let i = checkIns.firstIndex(where: { $0.id == checkIn.id }) { checkIns[i] = checkIn }
     }
+}
 
 // MARK: ─────────────────────────────────────────────────────────
 // MARK: WEIGHT STORE
@@ -319,12 +282,10 @@ class SBWeightStore: ObservableObject {
 
     func fetchForClient(_ clientId: UUID) async throws {
         entries = try await supabase
-            .from("weight_entries")
-            .select()
+            .from("weight_entries").select()
             .eq("client_id", value: clientId)
             .order("logged_at", ascending: false)
-            .execute()
-            .value
+            .execute().value
     }
 
     func log(_ entry: SBWeightEntryRow) async throws {
@@ -333,8 +294,7 @@ class SBWeightStore: ObservableObject {
     }
 
     func delete(_ entryId: UUID) async throws {
-        try await supabase.from("weight_entries").delete()
-            .eq("id", value: entryId).execute()
+        try await supabase.from("weight_entries").delete().eq("id", value: entryId).execute()
         entries.removeAll { $0.id == entryId }
     }
 
@@ -344,8 +304,7 @@ class SBWeightStore: ObservableObject {
         entries.compactMap { e in
             guard let d = e.loggedAt else { return nil }
             return (date: d, weight: e.weight)
-        }
-        .sorted { $0.date < $1.date }
+        }.sorted { $0.date < $1.date }
     }
 }
 
@@ -382,10 +341,21 @@ struct MessageRow: Codable, Identifiable {
 class SBMessageStore: ObservableObject {
     static let shared = SBMessageStore()
     @Published var messages: [MessageRow] = []
-    private var realtimeChannel: RealtimeChannelV2? = nil
-    private init() {}
+    private var realtimeTask:     Task<Void, Never>? = nil
+    private var currentTrainerId: UUID? = nil
+    private var currentClientId:  UUID? = nil
+
+    // ✅ Public init so SupabaseChatView can create its own instance
+    init() {}
+
+    // MARK: - Fetch (no realtime blocking)
 
     func fetchMessages(trainerId: UUID, clientId: UUID) async throws {
+        currentTrainerId = trainerId
+        currentClientId  = clientId
+
+        print("📥 fetchMessages start — trainer:\(trainerId) client:\(clientId)")
+
         messages = try await supabase
             .from("messages")
             .select()
@@ -394,24 +364,93 @@ class SBMessageStore: ObservableObject {
             .order("sent_at", ascending: true)
             .execute()
             .value
-        await markAllRead(trainerId: trainerId, clientId: clientId)
-        await subscribeRealtime(trainerId: trainerId, clientId: clientId)
+
+        print("📥 fetchMessages done — \(messages.count) messages loaded")
+
+        // Mark read in background, don't await
+        Task { await markAllRead(trainerId: trainerId, clientId: clientId) }
+
+        // Start realtime in background, don't await — this was causing the freeze
+        startRealtimeInBackground(trainerId: trainerId, clientId: clientId)
     }
+
+    // MARK: - Realtime (background, non-blocking)
+
+    private func startRealtimeInBackground(trainerId: UUID, clientId: UUID) {
+        // Cancel any existing realtime task
+        realtimeTask?.cancel()
+
+        realtimeTask = Task { [weak self] in
+            guard let self else { return }
+            print("🔌 Starting realtime subscription...")
+
+            do {
+                let channel = await supabase.realtimeV2.channel(
+                    "msgs_\(trainerId.uuidString.prefix(8))_\(clientId.uuidString.prefix(8))"
+                )
+
+                let changes = await channel.postgresChange(
+                    InsertAction.self,
+                    schema: "public",
+                    table:  "messages"
+                )
+
+                await channel.subscribe()
+                print("✅ Realtime subscribed")
+
+                for await _ in changes {
+                    guard !Task.isCancelled else { break }
+                    if let updated = try? await supabase
+                        .from("messages").select()
+                        .eq("trainer_id", value: trainerId)
+                        .eq("client_id",  value: clientId)
+                        .order("sent_at", ascending: true)
+                        .execute()
+                        .value as [MessageRow] {
+                        await MainActor.run { self.messages = updated }
+                    }
+                }
+
+                await supabase.realtimeV2.removeChannel(channel)
+            }
+        }
+    }
+
+    // MARK: - Send (optimistic)
 
     func send(_ message: MessageRow) async throws {
-        try await supabase.from("messages").insert(message).execute()
+        print("💾 Inserting to Supabase...")
         messages.append(message)
+        do {
+            try await supabase
+                .from("messages")
+                .insert(message)
+                .execute()
+            print("💾 Insert success")
+        } catch {
+            messages.removeAll { $0.id == message.id }
+            print("💾 Insert failed: \(error)")
+            throw error
+        }
     }
 
+    // MARK: - Mark All Read
+
     private func markAllRead(trainerId: UUID, clientId: UUID) async {
-        struct Update: Encodable { let isRead: Bool; enum CodingKeys: String, CodingKey { case isRead = "is_read" } }
-        try? await supabase.from("messages")
+        struct Update: Encodable {
+            let isRead: Bool
+            enum CodingKeys: String, CodingKey { case isRead = "is_read" }
+        }
+        try? await supabase
+            .from("messages")
             .update(Update(isRead: true))
             .eq("trainer_id", value: trainerId)
             .eq("client_id",  value: clientId)
-            .eq("is_read", value: false)
+            .eq("is_read",    value: false)
             .execute()
     }
+
+    // MARK: - Unread Count
 
     func unreadCount(trainerId: UUID, clientId: UUID, myRole: String) async -> Int {
         let opposite = myRole == "trainer" ? "client" : "trainer"
@@ -426,32 +465,20 @@ class SBMessageStore: ObservableObject {
         return result?.count ?? 0
     }
 
-    private func subscribeRealtime(trainerId: UUID, clientId: UUID) async {
-        let channel = await supabase.realtimeV2.channel("messages_\(trainerId)_\(clientId)")
-        let changes = await channel.postgresChange(
-            InsertAction.self, schema: "public", table: "messages"
-        )
-        await channel.subscribe()
-        realtimeChannel = channel
-        Task {
-            for await _ in changes {
-                // Refresh messages on new insert
-                if let updated = try? await supabase
-                    .from("messages")
-                    .select()
-                    .eq("trainer_id", value: trainerId)
-                    .eq("client_id",  value: clientId)
-                    .order("sent_at", ascending: true)
-                    .execute()
-                    .value as [MessageRow] {
-                    await MainActor.run { self.messages = updated }
-                }
-            }
-        }
-    }
+    // MARK: - Unsubscribe
 
     func unsubscribe() async {
-        if let ch = realtimeChannel { await supabase.realtimeV2.removeChannel(ch) }
+        realtimeTask?.cancel()
+        realtimeTask = nil
+        print("🔌 Realtime unsubscribed")
+    }
+
+    // MARK: - Clear
+
+    func clear() {
+        messages = []
+        currentTrainerId = nil
+        currentClientId  = nil
     }
 }
 
@@ -460,15 +487,15 @@ class SBMessageStore: ObservableObject {
 // MARK: ─────────────────────────────────────────────────────────
 
 struct SharedFileRow: Codable, Identifiable {
-    var id:          UUID
-    var trainerId:   UUID
-    var clientId:    UUID
-    var uploadedBy:  String
-    var fileName:    String
-    var fileUrl:     String
-    var fileSize:    Int?
-    var fileType:    String?
-    var createdAt:   Date?
+    var id:         UUID
+    var trainerId:  UUID
+    var clientId:   UUID
+    var uploadedBy: String
+    var fileName:   String
+    var fileUrl:    String
+    var fileSize:   Int?
+    var fileType:   String?
+    var createdAt:  Date?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -491,62 +518,55 @@ class SBSharedFileStore: ObservableObject {
 
     func fetchFiles(trainerId: UUID, clientId: UUID) async throws {
         files = try await supabase
-            .from("shared_files")
-            .select()
+            .from("shared_files").select()
             .eq("trainer_id", value: trainerId)
             .eq("client_id",  value: clientId)
             .order("created_at", ascending: false)
-            .execute()
-            .value
+            .execute().value
     }
 
     func upload(data: Data, fileName: String, fileType: String,
                 trainerId: UUID, clientId: UUID, uploadedBy: String) async throws {
         let path = "\(trainerId)/\(clientId)/\(UUID().uuidString)_\(fileName)"
         let url  = try await SupabaseStorage.uploadImage(
-            data: data, bucket: .sharedFiles, path: path, contentType: fileType
-        )
+            data: data, bucket: .sharedFiles, path: path, contentType: fileType)
         let file = SharedFileRow(
             id: UUID(), trainerId: trainerId, clientId: clientId,
             uploadedBy: uploadedBy, fileName: fileName,
-            fileUrl: url, fileSize: data.count, fileType: fileType,
-            createdAt: Date()
-        )
+            fileUrl: url, fileSize: data.count, fileType: fileType, createdAt: Date())
         try await supabase.from("shared_files").insert(file).execute()
         files.insert(file, at: 0)
     }
 
     func delete(_ fileId: UUID) async throws {
-        // Remove file from Supabase Storage first
         if let file = files.first(where: { $0.id == fileId }) {
             await SupabaseStorage.deleteByURL(file.fileUrl, bucket: .sharedFiles)
         }
-        try await supabase.from("shared_files").delete()
-            .eq("id", value: fileId).execute()
+        try await supabase.from("shared_files").delete().eq("id", value: fileId).execute()
         files.removeAll { $0.id == fileId }
     }
 }
 
 // MARK: ─────────────────────────────────────────────────────────
-// MARK: GYM AD STORE (Supabase)
+// MARK: GYM AD STORE
 // MARK: ─────────────────────────────────────────────────────────
 
 struct GymAdRow: Codable, Identifiable {
-    var id:               UUID
-    var businessName:     String
-    var tagline:          String
-    var category:         String
-    var phone:            String?
-    var websiteUrl:       String?
-    var imageUrl:         String?
-    var address:          String?
-    var city:             String?
-    var state:            String?
-    var status:           String
-    var plan:             String
-    var amenities:        [String]
-    var advertiserEmail:  String?
-    var createdAt:        Date?
+    var id:              UUID
+    var businessName:    String
+    var tagline:         String
+    var category:        String
+    var phone:           String?
+    var websiteUrl:      String?
+    var imageUrl:        String?
+    var address:         String?
+    var city:            String?
+    var state:           String?
+    var status:          String
+    var plan:            String
+    var amenities:       [String]
+    var advertiserEmail: String?
+    var createdAt:       Date?
 
     enum CodingKeys: String, CodingKey {
         case id, tagline, category, phone, address, city, state, status, plan, amenities
@@ -566,31 +586,24 @@ class SBGymAdStore: ObservableObject {
 
     func fetchActiveAds() async throws {
         activeAds = try await supabase
-            .from("gym_ads")
-            .select()
+            .from("gym_ads").select()
             .eq("status", value: "active")
-            .order("plan", ascending: false) // premium first
-            .execute()
-            .value
+            .order("plan", ascending: false)
+            .execute().value
     }
 
     func fetchActiveAds(city: String) async throws {
         activeAds = try await supabase
-            .from("gym_ads")
-            .select()
+            .from("gym_ads").select()
             .eq("status", value: "active")
             .ilike("city", pattern: "%\(city)%")
             .order("plan", ascending: false)
-            .execute()
-            .value
+            .execute().value
     }
 
     func deleteAd(_ adId: UUID) async throws {
-        // Remove logo from Supabase Storage
         await SupabaseStorage.deleteGymAdImage(adId: adId.uuidString)
-        // Remove from DB
-        try await supabase.from("gym_ads").delete()
-            .eq("id", value: adId).execute()
+        try await supabase.from("gym_ads").delete().eq("id", value: adId).execute()
         activeAds.removeAll { $0.id == adId }
     }
 
@@ -598,9 +611,7 @@ class SBGymAdStore: ObservableObject {
         var a = ad
         if let logoData = logoData {
             let path = "\(ad.id)/logo.jpg"
-            let url  = try await SupabaseStorage.uploadImage(
-                data: logoData, bucket: .gymAds, path: path
-            )
+            let url  = try await SupabaseStorage.uploadImage(data: logoData, bucket: .gymAds, path: path)
             a.imageUrl = url
         }
         try await supabase.from("gym_ads").insert(a).execute()

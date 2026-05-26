@@ -477,7 +477,7 @@ struct BookingCheckoutView: View {
                     return
                 }
                 var config = PaymentSheet.Configuration()
-                config.merchantDisplayName = "TrainerMatch"
+                config.merchantDisplayName = "Nearby Trainers"
                 let paymentSheet = PaymentSheet(
                     paymentIntentClientSecret: clientSecret,
                     configuration: config
