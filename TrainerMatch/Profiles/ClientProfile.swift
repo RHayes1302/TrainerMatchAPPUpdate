@@ -631,7 +631,7 @@ struct ClientTrainersView: View {
             NavigationView { TrainerSearchView() }
                 .tint(.tmGold).navigationViewStyle(StackNavigationViewStyle())
         }
-        .alert("Release Trainer?", isPresented: $showingReleaseAlert) {
+        .alert("Release Trainer?", isPresented: $showingReleaseAlert){
             Button("Cancel", role: .cancel) {}
             Button("Release Trainer", role: .destructive) {
                 if let conn = connectionToRelease {
@@ -641,7 +641,9 @@ struct ClientTrainersView: View {
                         trainerName: conn.trainerName,
                         clientName: conn.clientName)
                 }
+                
             }
+            
         } message: {
             if let conn = connectionToRelease {
                 Text("You are about to remove \(conn.trainerName) as your trainer.")
@@ -782,7 +784,10 @@ struct TrainerHubView: View {
     @StateObject private var videoVM  = VideoMessageViewModel.shared
     @State private var selectedSection: HubSection = .messages
     @State private var showingReleaseAlert = false
-
+    @State private var showingVideoCallInvite = false
+    @State private var showingLiveCall       = false
+    
+    
     enum HubSection: String, CaseIterable {
         case messages  = "Messages"
         case workouts  = "Workouts"
@@ -836,7 +841,36 @@ struct TrainerHubView: View {
         } message: {
             Text("You are about to remove \(connection.trainerName) as your trainer.")
         }
-    }
+        .sheet(isPresented: $showingVideoCallInvite) {
+            VideoCallInviteView(
+                channelName:      VideoCallManager.channelName(
+                    trainerId: connection.trainerId,
+                    clientId:  clientId
+                ),
+                remotePersonName: connection.trainerName,
+                isTrainer:        false,
+                token:            nil,
+                onJoin: {
+                    showingVideoCallInvite = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        showingLiveCall = true
+                    }
+                },
+                onDecline: { showingVideoCallInvite = false }
+            )
+        }
+        .fullScreenCover(isPresented: $showingLiveCall) {
+            AgoraVideoCallView(
+                channelName:      VideoCallManager.channelName(
+                    trainerId: connection.trainerId,
+                    clientId:  clientId
+                ),
+                isTrainer:        false,
+                remotePersonName: connection.trainerName,
+                token:            nil
+            )
+        }
+        }
 
     private var trainerHeader: some View {
         HStack(spacing: 14) {
@@ -847,6 +881,15 @@ struct TrainerHubView: View {
                 Text("Your Trainer").font(.caption).foregroundColor(.tmGold)
             }
             Spacer()
+            Button(action: { showingVideoCallInvite = true }) {
+                HStack(spacing: 6) {
+                    Image(systemName: "video.badge.plus").font(.system(size: 14))
+                    Text("Video Call").font(.system(size: 12, weight: .bold))
+                }
+                .foregroundColor(.black)
+                .padding(.horizontal, 14).padding(.vertical, 8)
+                .background(Capsule().fill(Color.green))
+            }
         }
         .padding(.horizontal, 20).padding(.vertical, 16)
         .background(Color.white.opacity(0.04))

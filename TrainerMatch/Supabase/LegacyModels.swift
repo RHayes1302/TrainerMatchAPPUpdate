@@ -38,14 +38,16 @@ extension SBWeightEntryRow {
 }
 
 // MARK: - Computed properties on CheckInRow
+// NOTE: trainerFeedback is a stored property on CheckInRow in SupabaseDataStores.swift
+// decoded from the trainer_feedback column. Do NOT redeclare it here.
 
 extension CheckInRow {
     var frontURL:  URL? { photoUrls[safe: 0].flatMap { URL(string: $0) } }
     var rearURL:   URL? { photoUrls[safe: 1].flatMap { URL(string: $0) } }
     var rightURL:  URL? { photoUrls[safe: 2].flatMap { URL(string: $0) } }
     var leftURL:   URL? { photoUrls[safe: 3].flatMap { URL(string: $0) } }
-    var isReviewed: Bool { !notes.isEmpty }
-        var trainerFeedback: String? { notes.isEmpty ? nil : notes }
+    var isReviewed: Bool { !(trainerFeedback ?? "").isEmpty }
+
     var formattedDate: String {
         let f = DateFormatter()
         f.dateStyle = .medium
@@ -145,7 +147,7 @@ struct PlannedMeal: Identifiable, Codable {
     }
 }
 
-// MARK: - ClientCheckIn
+// MARK: - ClientCheckIn (legacy local model)
 
 struct ClientCheckIn: Identifiable, Codable {
     let id: String
@@ -362,7 +364,7 @@ struct TrainerCheckInCard: View {
     }
 }
 
-// MARK: - ✅ TrainerCheckInsView — Supabase powered
+// MARK: - TrainerCheckInsView
 
 struct TrainerCheckInsView: View {
     let trainerId: String
@@ -380,12 +382,13 @@ struct TrainerCheckInsView: View {
     }
 
     private var filteredCheckIns: [CheckInRow] {
-            switch selectedFilter {
-            case .pending:  return allCheckIns.filter { $0.notes.isEmpty }
-            case .reviewed: return allCheckIns.filter { !$0.notes.isEmpty }
-            case .all:      return allCheckIns
-            }
+        switch selectedFilter {
+        case .pending:  return allCheckIns.filter { ($0.trainerFeedback ?? "").isEmpty }
+        case .reviewed: return allCheckIns.filter { !($0.trainerFeedback ?? "").isEmpty }
+        case .all:      return allCheckIns
         }
+    }
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
@@ -395,20 +398,16 @@ struct TrainerCheckInsView: View {
                         Button(action: { selectedFilter = mode }) {
                             Text(mode.rawValue)
                                 .font(.system(size: 13, weight: .bold))
-                                .foregroundColor(selectedFilter == mode
-                                                 ? .black : .white.opacity(0.4))
+                                .foregroundColor(selectedFilter == mode ? .black : .white.opacity(0.4))
                                 .frame(maxWidth: .infinity).padding(.vertical, 10)
-                                .background(selectedFilter == mode
-                                            ? Color.tmGold : Color.clear)
+                                .background(selectedFilter == mode ? Color.tmGold : Color.clear)
                         }
                     }
                 }
                 .background(Color.white.opacity(0.05))
-
                 if filteredCheckIns.isEmpty {
                     VStack(spacing: 14) {
-                        Image(systemName: "camera.viewfinder")
-                            .font(.system(size: 48))
+                        Image(systemName: "camera.viewfinder").font(.system(size: 48))
                             .foregroundColor(.white.opacity(0.15)).padding(.top, 60)
                         Text("No \(selectedFilter.rawValue.lowercased()) check-ins")
                             .font(.title3).foregroundColor(.white.opacity(0.4))
@@ -420,9 +419,7 @@ struct TrainerCheckInsView: View {
                 } else {
                     ScrollView {
                         LazyVStack(spacing: 12) {
-                            ForEach(filteredCheckIns) { ci in
-                                SBTrainerCheckInCard(checkIn: ci)
-                            }
+                            ForEach(filteredCheckIns) { ci in SBTrainerCheckInCard(checkIn: ci) }
                         }
                         .padding(20)
                     }
@@ -438,7 +435,7 @@ struct TrainerCheckInsView: View {
     }
 }
 
-// MARK: - Trainer Check-In Card (Supabase)
+// MARK: - SBTrainerCheckInCard
 
 struct SBTrainerCheckInCard: View {
     let checkIn: CheckInRow
@@ -451,54 +448,43 @@ struct SBTrainerCheckInCard: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(checkIn.formattedDate)
-                        .font(.system(size: 14, weight: .bold)).foregroundColor(.white)
-                    Text(checkIn.formattedWeight)
-                        .font(.caption).foregroundColor(.tmGold)
+                    Text(checkIn.formattedDate).font(.system(size: 14, weight: .bold)).foregroundColor(.white)
+                    Text(checkIn.formattedWeight).font(.caption).foregroundColor(.tmGold)
                 }
                 Spacer()
                 Text(checkIn.isReviewed ? "✓ Reviewed" : "⏳ Pending")
                     .font(.system(size: 10, weight: .bold))
                     .foregroundColor(checkIn.isReviewed ? .black : .white)
                     .padding(.horizontal, 8).padding(.vertical, 4)
-                    .background(Capsule().fill(
-                        checkIn.isReviewed ? Color.green : Color.orange))
+                    .background(Capsule().fill(checkIn.isReviewed ? Color.green : Color.orange))
             }
-
             if !checkIn.photoUrls.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
                         ForEach(checkIn.photoUrls, id: \.self) { urlStr in
-                            if let url = URL(string: urlStr) {
-                                AsyncCheckInPhoto(url: url)
-                            }
+                            if let url = URL(string: urlStr) { AsyncCheckInPhoto(url: url) }
                         }
                     }
                 }
             }
-
-            if checkIn.energyLevel != nil ||
-               checkIn.sleepHours  != nil ||
-               checkIn.waterOz     != nil {
+            if checkIn.energyLevel != nil || checkIn.sleepHours != nil || checkIn.waterOz != nil {
                 HStack(spacing: 0) {
-                    if let e = checkIn.energyLevel { statPill("⚡️ \(e)/10", "Energy") }
+                    if let e = checkIn.energyLevel { statPill("⚡️ \(e)/5", "Energy") }
                     if let s = checkIn.sleepHours  { statPill("😴 \(String(format: "%.1f", s))h", "Sleep") }
                     if let w = checkIn.waterOz     { statPill("💧 \(w)oz", "Water") }
                 }
                 .padding(.vertical, 8)
                 .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.04)))
             }
-
             if !checkIn.notes.isEmpty {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("CLIENT NOTE").font(.system(size: 9, weight: .bold))
-                                    .tracking(1).foregroundColor(.white.opacity(0.4))
-                                Text(checkIn.notes).font(.caption).foregroundColor(.white.opacity(0.7))
-                            }
-                            .padding(10)
-                            .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.04)))
-                        }
-
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("CLIENT NOTE").font(.system(size: 9, weight: .bold))
+                        .tracking(1).foregroundColor(.white.opacity(0.4))
+                    Text(checkIn.notes).font(.caption).foregroundColor(.white.opacity(0.7))
+                }
+                .padding(10)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.04)))
+            }
             if !checkIn.isReviewed {
                 Button(action: { showingFeedback = true }) {
                     HStack(spacing: 6) {
@@ -513,8 +499,7 @@ struct SBTrainerCheckInCard: View {
         .padding(14)
         .background(RoundedRectangle(cornerRadius: 16).fill(Color.white.opacity(0.05))
             .overlay(RoundedRectangle(cornerRadius: 16)
-                .stroke(checkIn.isReviewed
-                        ? Color.green.opacity(0.2) : Color.tmGold.opacity(0.2), lineWidth: 1)))
+                .stroke(checkIn.isReviewed ? Color.green.opacity(0.2) : Color.tmGold.opacity(0.2), lineWidth: 1)))
         .sheet(isPresented: $showingFeedback) { feedbackSheet }
     }
 
@@ -529,8 +514,7 @@ struct SBTrainerCheckInCard: View {
                     TextField("Great progress! Keep pushing...", text: $feedback, axis: .vertical)
                         .foregroundColor(.white).lineLimit(4...8).padding(14)
                         .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
-                        .overlay(RoundedRectangle(cornerRadius: 12)
-                            .stroke(Color.white.opacity(0.1), lineWidth: 1))
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.1), lineWidth: 1))
                     Button(action: saveFeedback) {
                         HStack(spacing: 8) {
                             if isSaving { ProgressView().tint(.black) } else {
@@ -560,38 +544,39 @@ struct SBTrainerCheckInCard: View {
     }
 
     private func saveFeedback() {
-            isSaving = true
-            let notes     = feedback
-            let checkInId = checkIn.id
-            Task {
-                let allRows = SBCheckInStore.shared.checkIns
-                for row in allRows where row.id == checkInId {
-                    var updated = row
-                    updated.notes = notes
-                    try? await SBCheckInStore.shared.update(updated)
-                    break
+        isSaving = true
+        let fb = feedback
+        let checkInId = checkIn.id
+        Task {
+            do {
+                struct Update: Encodable {
+                    let trainerFeedback: String
+                    enum CodingKeys: String, CodingKey { case trainerFeedback = "trainer_feedback" }
                 }
-                await MainActor.run {
-                    isSaving        = false
-                    showingFeedback = false
-                }
-            }
+                try await supabase.from("check_ins")
+                    .update(Update(trainerFeedback: fb))
+                    .eq("id", value: checkInId).execute()
+                store.loadForTrainer(
+                    store.checkIns.first(where: { $0.id == checkInId })?.trainerId.uuidString ?? ""
+                )
+            } catch { print("❌ Feedback save failed: \(error)") }
+            await MainActor.run { isSaving = false; showingFeedback = false }
         }
+    }
+
     private func statPill(_ value: String, _ label: String) -> some View {
         VStack(spacing: 2) {
             Text(value).font(.system(size: 13, weight: .bold)).foregroundColor(.white)
             Text(label).font(.system(size: 9)).foregroundColor(.white.opacity(0.4))
-        }
-        .frame(maxWidth: .infinity)
+        }.frame(maxWidth: .infinity)
     }
 }
 
-// MARK: - Async Photo Loader
+// MARK: - AsyncCheckInPhoto
 
 struct AsyncCheckInPhoto: View {
     let url: URL
     @State private var image: UIImage?
-
     var body: some View {
         Group {
             if let img = image {
@@ -610,20 +595,16 @@ struct AsyncCheckInPhoto: View {
     }
 }
 
-// MARK: - ✅ TrainerClientWorkoutsView — Supabase powered
+// MARK: - TrainerClientWorkoutsView
 
 struct TrainerClientWorkoutsView: View {
-    let trainerId:  String
-    let clientId:   String
-    let clientName: String
+    let trainerId: String; let clientId: String; let clientName: String
     @ObservedObject private var store = SBWorkoutStore.shared
     @Environment(\.dismiss) var dismiss
-    @State private var showingBuilder  = false
-    @State private var selectedFilter  = "all"
+    @State private var showingBuilder = false
+    @State private var selectedFilter = "all"
 
-    private var allWorkouts: [WorkoutRow] {
-        store.workouts.filter { $0.clientId.uuidString == clientId }
-    }
+    private var allWorkouts: [WorkoutRow] { store.workouts.filter { $0.clientId.uuidString == clientId } }
     private var filteredWorkouts: [WorkoutRow] {
         switch selectedFilter {
         case "assigned":  return allWorkouts.filter { $0.status == "assigned" }
@@ -637,29 +618,25 @@ struct TrainerClientWorkoutsView: View {
             Color.black.ignoresSafeArea()
             VStack(spacing: 0) {
                 HStack(spacing: 0) {
-                    filterChip("All",       key: "all")
-                    filterChip("Assigned",  key: "assigned")
+                    filterChip("All", key: "all")
+                    filterChip("Assigned", key: "assigned")
                     filterChip("Completed", key: "completed")
                 }
                 .padding(.horizontal, 16).padding(.vertical, 10)
                 .background(Color.white.opacity(0.03))
-
                 if filteredWorkouts.isEmpty {
                     VStack(spacing: 16) {
-                        Image(systemName: "dumbbell")
-                            .font(.system(size: 48)).foregroundColor(.white.opacity(0.15))
-                            .padding(.top, 60)
+                        Image(systemName: "dumbbell").font(.system(size: 48))
+                            .foregroundColor(.white.opacity(0.15)).padding(.top, 60)
                         Text("No workouts yet").font(.title3).foregroundColor(.white.opacity(0.4))
                         Button(action: { showingBuilder = true }) {
                             HStack(spacing: 8) {
-                                Image(systemName: "plus.circle.fill")
-                                Text("Assign Workout")
+                                Image(systemName: "plus.circle.fill"); Text("Assign Workout")
                             }
                             .foregroundColor(.black).padding(.horizontal, 24).padding(.vertical, 12)
                             .background(RoundedRectangle(cornerRadius: 20).fill(Color.tmGold))
                         }
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }.frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
                     List {
                         ForEach(filteredWorkouts) { w in
@@ -671,13 +648,11 @@ struct TrainerClientWorkoutsView: View {
                             let items = idx.map { filteredWorkouts[$0] }
                             Task { for w in items { try? await store.delete(w.id) } }
                         }
-                    }
-                    .listStyle(.plain).scrollContentBackground(.hidden)
+                    }.listStyle(.plain).scrollContentBackground(.hidden)
                 }
             }
         }
-        .navigationTitle("\(clientName)'s Workouts")
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationTitle("\(clientName)'s Workouts").navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Color.black, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
@@ -685,17 +660,14 @@ struct TrainerClientWorkoutsView: View {
             ToolbarItem(placement: .navigationBarLeading) {
                 Button(action: { dismiss() }) {
                     HStack(spacing: 4) {
-                        Image(systemName: "chevron.left").fontWeight(.semibold)
-                        Text("Back")
+                        Image(systemName: "chevron.left").fontWeight(.semibold); Text("Back")
                     }.foregroundColor(.tmGold)
                 }
             }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button(action: { showingBuilder = true }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "plus")
-                        Text("Assign")
-                    }.fontWeight(.semibold).foregroundColor(.tmGold)
+                    HStack(spacing: 4) { Image(systemName: "plus"); Text("Assign") }
+                        .fontWeight(.semibold).foregroundColor(.tmGold)
                 }
             }
         }
@@ -713,303 +685,17 @@ struct TrainerClientWorkoutsView: View {
             Text(label).font(.system(size: 12, weight: .bold))
                 .foregroundColor(selectedFilter == key ? .black : .white.opacity(0.5))
                 .padding(.horizontal, 14).padding(.vertical, 7)
-                .background(Capsule().fill(
-                    selectedFilter == key ? Color.tmGold : Color.white.opacity(0.08)))
+                .background(Capsule().fill(selectedFilter == key ? Color.tmGold : Color.white.opacity(0.08)))
         }
     }
 }
 
-// MARK: - ✅ WorkoutBuilderView — Supabase powered
-
-struct WorkoutBuilderView: View {
-    let trainerId:  String
-    let clientId:   String
-    let clientName: String
-    @Environment(\.dismiss) var dismiss
-    @ObservedObject private var store = SBWorkoutStore.shared
-
-    @State private var title         = ""
-    @State private var description   = ""
-    @State private var difficulty    = "intermediate"
-    @State private var estimatedMins = 45
-    @State private var dueDate       = Date().addingTimeInterval(7 * 86400)
-    @State private var exercises: [WorkoutExerciseJSON] = []
-    @State private var isSaving      = false
-    @State private var showingAddExercise = false
-    @State private var newExName     = ""
-    @State private var newExSets     = "3"
-    @State private var newExReps     = "10"
-    @State private var newExRest     = "60"
-    @State private var newExNotes    = ""
-
-    let difficulties = ["beginner", "intermediate", "advanced"]
-
-    var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-            ScrollView {
-                VStack(spacing: 20) {
-                    formBlock("WORKOUT TITLE") {
-                        TextField("e.g. Upper Body Strength", text: $title)
-                            .foregroundColor(.white).padding(14)
-                            .background(RoundedRectangle(cornerRadius: 12)
-                                .fill(Color.white.opacity(0.06)))
-                            .overlay(RoundedRectangle(cornerRadius: 12)
-                                .stroke(Color.white.opacity(0.1), lineWidth: 1))
-                    }
-                    formBlock("DESCRIPTION (OPTIONAL)") {
-                        TextField("What should the client focus on?",
-                                  text: $description, axis: .vertical)
-                            .foregroundColor(.white).lineLimit(2...4).padding(14)
-                            .background(RoundedRectangle(cornerRadius: 12)
-                                .fill(Color.white.opacity(0.06)))
-                            .overlay(RoundedRectangle(cornerRadius: 12)
-                                .stroke(Color.white.opacity(0.1), lineWidth: 1))
-                    }
-                    HStack(spacing: 12) {
-                        formBlock("DIFFICULTY") {
-                            Menu {
-                                ForEach(difficulties, id: \.self) { d in
-                                    Button(d.capitalized) { difficulty = d }
-                                }
-                            } label: {
-                                HStack {
-                                    Text(difficulty.capitalized).foregroundColor(.white)
-                                    Spacer()
-                                    Image(systemName: "chevron.down")
-                                        .font(.caption).foregroundColor(.gray)
-                                }
-                                .padding(12)
-                                .background(RoundedRectangle(cornerRadius: 12)
-                                    .fill(Color.white.opacity(0.06)))
-                            }
-                        }
-                        formBlock("EST. MINUTES") {
-                            HStack {
-                                Button(action: { if estimatedMins > 5 { estimatedMins -= 5 } }) {
-                                    Image(systemName: "minus.circle.fill")
-                                        .foregroundColor(.tmGold).font(.title3)
-                                }
-                                Text("\(estimatedMins)")
-                                    .font(.system(size: 18, weight: .bold))
-                                    .foregroundColor(.white).frame(minWidth: 40)
-                                Button(action: { estimatedMins += 5 }) {
-                                    Image(systemName: "plus.circle.fill")
-                                        .foregroundColor(.tmGold).font(.title3)
-                                }
-                            }
-                            .padding(12)
-                            .background(RoundedRectangle(cornerRadius: 12)
-                                .fill(Color.white.opacity(0.06)))
-                        }
-                    }
-                    formBlock("DUE DATE") {
-                        DatePicker("", selection: $dueDate, in: Date()...,
-                                   displayedComponents: .date)
-                            .datePickerStyle(.compact).colorScheme(.dark)
-                            .tint(.tmGold).labelsHidden().padding(8)
-                            .background(RoundedRectangle(cornerRadius: 12)
-                                .fill(Color.white.opacity(0.06)))
-                    }
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack {
-                            Text("EXERCISES").font(.system(size: 10, weight: .bold))
-                                .tracking(1.2).foregroundColor(.tmGold)
-                            Spacer()
-                            Button(action: { showingAddExercise = true }) {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "plus.circle.fill").font(.caption)
-                                    Text("Add").font(.caption).fontWeight(.semibold)
-                                }.foregroundColor(.tmGold)
-                            }
-                        }
-                        if exercises.isEmpty {
-                            Text("No exercises yet — tap Add to build your workout.")
-                                .font(.caption).foregroundColor(.white.opacity(0.35)).padding(14)
-                                .background(RoundedRectangle(cornerRadius: 12)
-                                    .fill(Color.white.opacity(0.03)))
-                        } else {
-                            ForEach(Array(exercises.enumerated()), id: \.offset) { i, ex in
-                                HStack(spacing: 12) {
-                                    Text("\(i + 1)")
-                                        .font(.system(size: 12, weight: .black)).foregroundColor(.black)
-                                        .frame(width: 26, height: 26).background(Circle().fill(Color.tmGold))
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        Text(ex.name).font(.system(size: 13, weight: .semibold))
-                                            .foregroundColor(.white)
-                                        HStack(spacing: 6) {
-                                            if let s = ex.sets, let r = ex.reps {
-                                                Text("\(s) sets × \(r) reps")
-                                            }
-                                            if let rest = ex.restTime { Text("· \(rest)s rest") }
-                                        }
-                                        .font(.caption).foregroundColor(.white.opacity(0.45))
-                                    }
-                                    Spacer()
-                                    Button(action: { exercises.remove(at: i) }) {
-                                        Image(systemName: "trash")
-                                            .font(.caption).foregroundColor(.red.opacity(0.6))
-                                    }
-                                }
-                                .padding(12)
-                                .background(RoundedRectangle(cornerRadius: 12)
-                                    .fill(Color.white.opacity(0.04)))
-                            }
-                        }
-                    }
-                    Button(action: saveWorkout) {
-                        HStack(spacing: 8) {
-                            if isSaving { ProgressView().tint(.black) } else {
-                                Image(systemName: "paperplane.fill")
-                                Text("ASSIGN TO \(clientName.uppercased())")
-                                    .font(.system(size: 14, weight: .heavy)).tracking(0.5)
-                            }
-                        }
-                        .foregroundColor(.black).frame(maxWidth: .infinity).frame(height: 54)
-                        .background(RoundedRectangle(cornerRadius: 27)
-                            .fill(title.isEmpty ? Color.tmGold.opacity(0.3) : Color.tmGold))
-                    }
-                    .disabled(title.isEmpty || isSaving)
-                }
-                .padding(20)
-            }
-        }
-        .navigationTitle("Assign Workout").navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(Color.black, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
-        .toolbarColorScheme(.dark, for: .navigationBar)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button("Cancel") { dismiss() }.foregroundColor(.tmGold)
-            }
-        }
-        .sheet(isPresented: $showingAddExercise) { addExerciseSheet }
-    }
-
-    private var addExerciseSheet: some View {
-        NavigationView {
-            ZStack {
-                Color.black.ignoresSafeArea()
-                ScrollView {
-                    VStack(spacing: 16) {
-                        formBlock("EXERCISE NAME") {
-                            TextField("e.g. Bench Press", text: $newExName)
-                                .foregroundColor(.white).padding(14)
-                                .background(RoundedRectangle(cornerRadius: 12)
-                                    .fill(Color.white.opacity(0.06)))
-                                .overlay(RoundedRectangle(cornerRadius: 12)
-                                    .stroke(Color.white.opacity(0.1), lineWidth: 1))
-                        }
-                        HStack(spacing: 12) {
-                            formBlock("SETS") {
-                                TextField("3", text: $newExSets).keyboardType(.numberPad)
-                                    .foregroundColor(.white).padding(14)
-                                    .background(RoundedRectangle(cornerRadius: 12)
-                                        .fill(Color.white.opacity(0.06)))
-                            }
-                            formBlock("REPS") {
-                                TextField("10", text: $newExReps).keyboardType(.numberPad)
-                                    .foregroundColor(.white).padding(14)
-                                    .background(RoundedRectangle(cornerRadius: 12)
-                                        .fill(Color.white.opacity(0.06)))
-                            }
-                            formBlock("REST (sec)") {
-                                TextField("60", text: $newExRest).keyboardType(.numberPad)
-                                    .foregroundColor(.white).padding(14)
-                                    .background(RoundedRectangle(cornerRadius: 12)
-                                        .fill(Color.white.opacity(0.06)))
-                            }
-                        }
-                        formBlock("NOTES (OPTIONAL)") {
-                            TextField("Form tips, tempo, etc.", text: $newExNotes, axis: .vertical)
-                                .foregroundColor(.white).lineLimit(2...3).padding(14)
-                                .background(RoundedRectangle(cornerRadius: 12)
-                                    .fill(Color.white.opacity(0.06)))
-                                .overlay(RoundedRectangle(cornerRadius: 12)
-                                    .stroke(Color.white.opacity(0.1), lineWidth: 1))
-                        }
-                        Button(action: addExercise) {
-                            Text("ADD EXERCISE").font(.system(size: 15, weight: .heavy)).tracking(0.5)
-                                .foregroundColor(.black).frame(maxWidth: .infinity).frame(height: 54)
-                                .background(RoundedRectangle(cornerRadius: 27)
-                                    .fill(newExName.isEmpty ? Color.tmGold.opacity(0.3) : Color.tmGold))
-                        }
-                        .disabled(newExName.isEmpty)
-                    }
-                    .padding(20)
-                }
-            }
-            .navigationTitle("Add Exercise").navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(Color.black, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") { showingAddExercise = false }.foregroundColor(.tmGold)
-                }
-            }
-        }
-    }
-
-    private func addExercise() {
-        exercises.append(WorkoutExerciseJSON(
-            name: newExName, sets: Int(newExSets), reps: Int(newExReps),
-            duration: nil, restTime: Int(newExRest),
-            notes: newExNotes.isEmpty ? nil : newExNotes
-        ))
-        newExName = ""; newExSets = "3"; newExReps = "10"; newExRest = "60"; newExNotes = ""
-        showingAddExercise = false
-    }
-
-    private func saveWorkout() {
-        guard let tUUID = UUID(uuidString: trainerId),
-              let cUUID = UUID(uuidString: clientId) else { return }
-        isSaving = true
-        let desc = description.isEmpty ? "" : description
-        let now = Date(); let due = dueDate; let exs = exercises
-        let diff = difficulty; let mins = estimatedMins; let ttl = title
-        let exItems = exs.map { ex in
-            ExerciseItem(id: UUID(), name: ex.name, sets: ex.sets ?? 3,
-                         reps: ex.reps.map { "\($0)" } ?? "10",
-                         weight: "", notes: ex.notes ?? "", restSeconds: ex.restTime ?? 60)
-        }
-        let row = WorkoutRow(id: UUID(), trainerId: tUUID, clientId: cUUID,
-                             title: ttl, description: desc, exercises: exItems,
-                             difficulty: diff, estimatedMins: mins, status: "assigned",
-                             assignedDate: now, dueDate: due, completedAt: nil, createdAt: now)
-        Task {
-            do {
-                try await SBWorkoutStore.shared.create(row)
-                await MainActor.run { isSaving = false; dismiss() }
-            } catch {
-                print("❌ Workout save error: \(error)")
-                await MainActor.run { isSaving = false }
-            }
-        }
-    }
-
-    private func formBlock<Content: View>(
-        _ label: String, @ViewBuilder content: () -> Content
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(label).font(.system(size: 10, weight: .bold))
-                .tracking(1.2).foregroundColor(.tmGold)
-            content()
-        }
-    }
-}
-
-// MARK: - ✅ ClientWorkoutsSection — Supabase powered
+// MARK: - ClientWorkoutsSection
 
 struct ClientWorkoutsSection: View {
-    let clientId:   String
-    let clientName: String
-    let trainerId:  String
+    let clientId: String; let clientName: String; let trainerId: String
     @ObservedObject private var store = SBWorkoutStore.shared
-
-    private var workouts: [WorkoutRow] {
-        store.workouts.filter { $0.clientId.uuidString == clientId }
-    }
+    private var workouts: [WorkoutRow] { store.workouts.filter { $0.clientId.uuidString == clientId } }
     private var pending: [WorkoutRow] { workouts.filter { $0.status == "assigned" } }
 
     var body: some View {
@@ -1017,10 +703,8 @@ struct ClientWorkoutsSection: View {
             Text("Workouts").font(.title2).fontWeight(.bold).foregroundColor(.white)
             if workouts.isEmpty {
                 VStack(spacing: 12) {
-                    Image(systemName: "dumbbell").font(.system(size: 40))
-                        .foregroundColor(.tmGold.opacity(0.2))
-                    Text("No workouts assigned yet")
-                        .font(.subheadline).foregroundColor(.white.opacity(0.4))
+                    Image(systemName: "dumbbell").font(.system(size: 40)).foregroundColor(.tmGold.opacity(0.2))
+                    Text("No workouts assigned yet").font(.subheadline).foregroundColor(.white.opacity(0.4))
                     Text("Your trainer will assign workouts here.")
                         .font(.caption).foregroundColor(.white.opacity(0.3)).multilineTextAlignment(.center)
                 }
@@ -1038,24 +722,21 @@ struct ClientWorkoutsSection: View {
                 .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.04)))
                 ForEach(workouts.prefix(5)) { w in SBWorkoutRow(workout: w, isTrainerView: false) }
             }
-        }
-        .onAppear { store.loadForClient(clientId) }
+        }.onAppear { store.loadForClient(clientId) }
     }
 
     private func wkStat(_ value: String, _ label: String) -> some View {
         VStack(spacing: 3) {
             Text(value).font(.system(size: 16, weight: .black)).foregroundColor(.tmGold)
             Text(label).font(.system(size: 9)).foregroundColor(.white.opacity(0.4))
-        }
-        .frame(maxWidth: .infinity)
+        }.frame(maxWidth: .infinity)
     }
 }
 
-// MARK: - Shared Workout Row
+// MARK: - SBWorkoutRow
 
 struct SBWorkoutRow: View {
-    let workout:       WorkoutRow
-    let isTrainerView: Bool
+    let workout: WorkoutRow; let isTrainerView: Bool
     @ObservedObject private var store = SBWorkoutStore.shared
     @State private var isCompleting = false
 
@@ -1063,8 +744,7 @@ struct SBWorkoutRow: View {
         VStack(spacing: 0) {
             HStack(spacing: 12) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(difficultyColor.opacity(0.15)).frame(width: 38, height: 38)
+                    RoundedRectangle(cornerRadius: 8).fill(difficultyColor.opacity(0.15)).frame(width: 38, height: 38)
                     Image(systemName: statusIcon).font(.system(size: 14)).foregroundColor(difficultyColor)
                 }
                 VStack(alignment: .leading, spacing: 3) {
@@ -1073,8 +753,7 @@ struct SBWorkoutRow: View {
                         Text("\(workout.estimatedMins) min"); Text("·")
                         Text(workout.difficulty.capitalized); Text("·")
                         Text("\(workout.exercises.count) exercises")
-                    }
-                    .font(.caption).foregroundColor(.white.opacity(0.4))
+                    }.font(.caption).foregroundColor(.white.opacity(0.4))
                 }
                 Spacer()
                 Text(workout.status.capitalized).font(.system(size: 9, weight: .bold))
@@ -1083,16 +762,13 @@ struct SBWorkoutRow: View {
                     .background(Capsule().fill(
                         workout.status == "completed" ? Color.green :
                         workout.status == "assigned"  ? Color.tmGold : Color.orange))
-            }
-            .padding(12)
+            }.padding(12)
+
             if !isTrainerView && workout.status == "assigned" {
                 Button(action: markComplete) {
                     HStack(spacing: 6) {
                         if isCompleting { ProgressView().tint(.black).scaleEffect(0.8) }
-                        else {
-                            Image(systemName: "checkmark.circle.fill")
-                            Text("Mark Complete").font(.system(size: 13, weight: .bold))
-                        }
+                        else { Image(systemName: "checkmark.circle.fill"); Text("Mark Complete").font(.system(size: 13, weight: .bold)) }
                     }
                     .foregroundColor(.black).frame(maxWidth: .infinity).frame(height: 38)
                     .background(RoundedRectangle(cornerRadius: 10).fill(Color.tmGold))
@@ -1104,60 +780,40 @@ struct SBWorkoutRow: View {
     }
 
     private var difficultyColor: Color {
-        switch workout.difficulty {
-        case "beginner": return .green
-        case "advanced": return .red
-        default:         return .tmGold
-        }
+        workout.difficulty == "beginner" ? .green : workout.difficulty == "advanced" ? .red : .tmGold
     }
     private var statusIcon: String {
-        switch workout.status {
-        case "completed": return "checkmark.circle.fill"
-        case "skipped":   return "xmark.circle"
-        default:          return "dumbbell"
-        }
+        workout.status == "completed" ? "checkmark.circle.fill" : workout.status == "skipped" ? "xmark.circle" : "dumbbell"
     }
     private func markComplete() {
         isCompleting = true
-        Task {
-            try? await store.markComplete(workout.id)
-            await MainActor.run { isCompleting = false }
-        }
+        Task { try? await store.markComplete(workout.id); await MainActor.run { isCompleting = false } }
     }
 }
 
-// MARK: - ✅ TrainerClientMealPlansView — Supabase powered
+// MARK: - TrainerClientMealPlansView
 
 struct TrainerClientMealPlansView: View {
-    let trainerId:  String
-    let clientId:   String
-    let clientName: String
+    let trainerId: String; let clientId: String; let clientName: String
     @ObservedObject private var store = SBMealPlanStore.shared
     @Environment(\.dismiss) var dismiss
     @State private var showingBuilder = false
-
-    private var plans: [MealPlanRow] {
-        store.mealPlans.filter { $0.clientId.uuidString == clientId }
-    }
+    private var plans: [MealPlanRow] { store.mealPlans.filter { $0.clientId.uuidString == clientId } }
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
             if plans.isEmpty {
                 VStack(spacing: 16) {
-                    Image(systemName: "fork.knife")
-                        .font(.system(size: 48)).foregroundColor(.white.opacity(0.15)).padding(.top, 60)
+                    Image(systemName: "fork.knife").font(.system(size: 48))
+                        .foregroundColor(.white.opacity(0.15)).padding(.top, 60)
                     Text("No meal plans yet").font(.title3).foregroundColor(.white.opacity(0.4))
                     Button(action: { showingBuilder = true }) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "plus.circle.fill")
-                            Text("Create Meal Plan")
-                        }
-                        .foregroundColor(.black).padding(.horizontal, 24).padding(.vertical, 12)
-                        .background(RoundedRectangle(cornerRadius: 20).fill(Color.tmGold))
+                        HStack(spacing: 8) { Image(systemName: "plus.circle.fill"); Text("Create Meal Plan") }
+                            .foregroundColor(.black).padding(.horizontal, 24).padding(.vertical, 12)
+                            .background(RoundedRectangle(cornerRadius: 20).fill(Color.tmGold))
                     }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List {
                     ForEach(plans) { p in
@@ -1169,8 +825,7 @@ struct TrainerClientMealPlansView: View {
                         let items = idx.map { plans[$0] }
                         Task { for p in items { try? await store.delete(p.id) } }
                     }
-                }
-                .listStyle(.plain).scrollContentBackground(.hidden)
+                }.listStyle(.plain).scrollContentBackground(.hidden)
             }
         }
         .navigationTitle("\(clientName)'s Nutrition").navigationBarTitleDisplayMode(.inline)
@@ -1181,17 +836,14 @@ struct TrainerClientMealPlansView: View {
             ToolbarItem(placement: .navigationBarLeading) {
                 Button(action: { dismiss() }) {
                     HStack(spacing: 4) {
-                        Image(systemName: "chevron.left").fontWeight(.semibold)
-                        Text("Back")
+                        Image(systemName: "chevron.left").fontWeight(.semibold); Text("Back")
                     }.foregroundColor(.tmGold)
                 }
             }
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button(action: { showingBuilder = true }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "plus")
-                        Text("Create")
-                    }.fontWeight(.semibold).foregroundColor(.tmGold)
+                    HStack(spacing: 4) { Image(systemName: "plus"); Text("Create") }
+                        .fontWeight(.semibold).foregroundColor(.tmGold)
                 }
             }
         }
@@ -1205,7 +857,7 @@ struct TrainerClientMealPlansView: View {
     }
 }
 
-// MARK: - Meal Plan Row
+// MARK: - SBMealPlanRow
 
 struct SBMealPlanRow: View {
     let plan: MealPlanRow
@@ -1220,335 +872,30 @@ struct SBMealPlanRow: View {
                 Spacer()
                 if plan.isActive {
                     Text("ACTIVE").font(.system(size: 9, weight: .bold)).foregroundColor(.black)
-                        .padding(.horizontal, 8).padding(.vertical, 3)
-                        .background(Capsule().fill(Color.tmGold))
+                        .padding(.horizontal, 8).padding(.vertical, 3).background(Capsule().fill(Color.tmGold))
                 }
             }
             HStack(spacing: 0) {
-                macroCell(String(format: "%.0fg", plan.proteinG ?? 0), "protein", .red)
-                macroCell(String(format: "%.0fg", plan.carbsG   ?? 0), "carbs",   .blue)
-                macroCell(String(format: "%.0fg", plan.fatG     ?? 0), "fat",     .yellow)
+                macroCell(String(format: "%.0fg", plan.proteinG), "protein", .red)
+                macroCell(String(format: "%.0fg", plan.carbsG),   "carbs",   .blue)
+                macroCell(String(format: "%.0fg", plan.fatG),     "fat",     .yellow)
             }
             .padding(.vertical, 8)
             .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.03)))
-        }
-        .padding(.vertical, 6)
+        }.padding(.vertical, 6)
     }
     private func macroCell(_ value: String, _ label: String, _ color: Color) -> some View {
         VStack(spacing: 2) {
             Text(value).font(.system(size: 13, weight: .black)).foregroundColor(color)
             Text(label).font(.system(size: 9)).foregroundColor(.white.opacity(0.35))
-        }
-        .frame(maxWidth: .infinity)
+        }.frame(maxWidth: .infinity)
     }
 }
 
-// MARK: - ✅ MealPlanBuilderView — Supabase powered
-
-struct MealPlanBuilderView: View {
-    let trainerId:  String
-    let clientId:   String
-    let clientName: String
-    @Environment(\.dismiss) var dismiss
-
-    @State private var title          = ""
-    @State private var description    = ""
-    @State private var dailyCalories  = 2000
-    @State private var proteinG       = 150.0
-    @State private var carbsG         = 200.0
-    @State private var fatG           = 65.0
-    @State private var meals: [MealItem] = []
-    @State private var isSaving       = false
-    @State private var showingAddMeal = false
-    @State private var newMealType    = "Breakfast"
-    @State private var newMealName    = ""
-    @State private var newMealCals    = ""
-    @State private var newMealProtein = ""
-    @State private var newMealCarbs   = ""
-    @State private var newMealFat     = ""
-    @State private var newMealNotes   = ""
-
-    let mealTypes = ["Breakfast","Lunch","Dinner","Snack","Pre-Workout","Post-Workout"]
-
-    var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-            ScrollView {
-                VStack(spacing: 20) {
-                    formBlock("PLAN TITLE") {
-                        TextField("e.g. Lean Bulk Phase 1", text: $title)
-                            .foregroundColor(.white).padding(14)
-                            .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
-                            .overlay(RoundedRectangle(cornerRadius: 12)
-                                .stroke(Color.white.opacity(0.1), lineWidth: 1))
-                    }
-                    formBlock("DESCRIPTION (OPTIONAL)") {
-                        TextField("Goals, notes, instructions...", text: $description, axis: .vertical)
-                            .foregroundColor(.white).lineLimit(2...4).padding(14)
-                            .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
-                            .overlay(RoundedRectangle(cornerRadius: 12)
-                                .stroke(Color.white.opacity(0.1), lineWidth: 1))
-                    }
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("DAILY TARGETS").font(.system(size: 10, weight: .bold))
-                            .tracking(1.2).foregroundColor(.tmGold)
-                        macroStepper("Calories", value: $dailyCalories, step: 50, color: .tmGold)
-                        HStack(spacing: 12) {
-                            macroDoubleStepper("Protein (g)", value: $proteinG, step: 5, color: .red)
-                            macroDoubleStepper("Carbs (g)",   value: $carbsG,   step: 5, color: .blue)
-                            macroDoubleStepper("Fat (g)",     value: $fatG,     step: 5, color: .yellow)
-                        }
-                    }
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack {
-                            Text("MEALS").font(.system(size: 10, weight: .bold))
-                                .tracking(1.2).foregroundColor(.tmGold)
-                            Spacer()
-                            Button(action: { showingAddMeal = true }) {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "plus.circle.fill").font(.caption)
-                                    Text("Add Meal").font(.caption).fontWeight(.semibold)
-                                }.foregroundColor(.tmGold)
-                            }
-                        }
-                        if meals.isEmpty {
-                            Text("No meals yet — tap Add Meal to build the plan.")
-                                .font(.caption).foregroundColor(.white.opacity(0.35)).padding(14)
-                                .background(RoundedRectangle(cornerRadius: 12)
-                                    .fill(Color.white.opacity(0.03)))
-                        } else {
-                            ForEach(Array(meals.enumerated()), id: \.offset) { i, meal in
-                                HStack(spacing: 12) {
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        HStack(spacing: 6) {
-                                            Text(meal.mealType)
-                                                .font(.system(size: 10, weight: .bold)).foregroundColor(.tmGold)
-                                            Text(meal.name)
-                                                .font(.system(size: 13, weight: .semibold)).foregroundColor(.white)
-                                        }
-                                        Text("\(meal.calories) cal · P:\(Int(meal.protein))g C:\(Int(meal.carbs))g F:\(Int(meal.fat))g")
-                                            .font(.caption).foregroundColor(.white.opacity(0.4))
-                                    }
-                                    Spacer()
-                                    Button(action: { meals.remove(at: i) }) {
-                                        Image(systemName: "trash").font(.caption).foregroundColor(.red.opacity(0.6))
-                                    }
-                                }
-                                .padding(12)
-                                .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.04)))
-                            }
-                        }
-                    }
-                    Button(action: savePlan) {
-                        HStack(spacing: 8) {
-                            if isSaving { ProgressView().tint(.black) } else {
-                                Image(systemName: "paperplane.fill")
-                                Text("ASSIGN TO \(clientName.uppercased())")
-                                    .font(.system(size: 14, weight: .heavy)).tracking(0.5)
-                            }
-                        }
-                        .foregroundColor(.black).frame(maxWidth: .infinity).frame(height: 54)
-                        .background(RoundedRectangle(cornerRadius: 27)
-                            .fill(title.isEmpty ? Color.tmGold.opacity(0.3) : Color.tmGold))
-                    }
-                    .disabled(title.isEmpty || isSaving)
-                }
-                .padding(20)
-            }
-        }
-        .navigationTitle("Create Meal Plan").navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(Color.black, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
-        .toolbarColorScheme(.dark, for: .navigationBar)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button("Cancel") { dismiss() }.foregroundColor(.tmGold)
-            }
-        }
-        .sheet(isPresented: $showingAddMeal) { addMealSheet }
-    }
-
-    private var addMealSheet: some View {
-        NavigationView {
-            ZStack {
-                Color.black.ignoresSafeArea()
-                ScrollView {
-                    VStack(spacing: 16) {
-                        formBlock("MEAL TYPE") {
-                            Menu {
-                                ForEach(mealTypes, id: \.self) { t in Button(t) { newMealType = t } }
-                            } label: {
-                                HStack {
-                                    Text(newMealType).foregroundColor(.white); Spacer()
-                                    Image(systemName: "chevron.down").font(.caption).foregroundColor(.gray)
-                                }
-                                .padding(14)
-                                .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
-                            }
-                        }
-                        formBlock("MEAL NAME") {
-                            TextField("e.g. Oatmeal with berries", text: $newMealName)
-                                .foregroundColor(.white).padding(14)
-                                .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
-                                .overlay(RoundedRectangle(cornerRadius: 12)
-                                    .stroke(Color.white.opacity(0.1), lineWidth: 1))
-                        }
-                        HStack(spacing: 12) {
-                            formBlock("CALORIES") {
-                                TextField("400", text: $newMealCals).keyboardType(.numberPad)
-                                    .foregroundColor(.white).padding(14)
-                                    .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
-                            }
-                            formBlock("PROTEIN (g)") {
-                                TextField("30", text: $newMealProtein).keyboardType(.decimalPad)
-                                    .foregroundColor(.white).padding(14)
-                                    .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
-                            }
-                        }
-                        HStack(spacing: 12) {
-                            formBlock("CARBS (g)") {
-                                TextField("50", text: $newMealCarbs).keyboardType(.decimalPad)
-                                    .foregroundColor(.white).padding(14)
-                                    .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
-                            }
-                            formBlock("FAT (g)") {
-                                TextField("10", text: $newMealFat).keyboardType(.decimalPad)
-                                    .foregroundColor(.white).padding(14)
-                                    .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
-                            }
-                        }
-                        formBlock("NOTES (OPTIONAL)") {
-                            TextField("Preparation tips, timing...", text: $newMealNotes, axis: .vertical)
-                                .foregroundColor(.white).lineLimit(2...3).padding(14)
-                                .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
-                                .overlay(RoundedRectangle(cornerRadius: 12)
-                                    .stroke(Color.white.opacity(0.1), lineWidth: 1))
-                        }
-                        Button(action: addMeal) {
-                            Text("ADD MEAL").font(.system(size: 15, weight: .heavy)).tracking(0.5)
-                                .foregroundColor(.black).frame(maxWidth: .infinity).frame(height: 54)
-                                .background(RoundedRectangle(cornerRadius: 27)
-                                    .fill(newMealName.isEmpty ? Color.tmGold.opacity(0.3) : Color.tmGold))
-                        }
-                        .disabled(newMealName.isEmpty)
-                    }
-                    .padding(20)
-                }
-            }
-            .navigationTitle("Add Meal").navigationBarTitleDisplayMode(.inline)
-            .toolbarBackground(Color.black, for: .navigationBar)
-            .toolbarBackground(.visible, for: .navigationBar)
-            .toolbarColorScheme(.dark, for: .navigationBar)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Cancel") { showingAddMeal = false }.foregroundColor(.tmGold)
-                }
-            }
-        }
-    }
-
-    private func addMeal() {
-        meals.append(MealItem(
-            id:       UUID(),
-            mealType: newMealType,
-            name:     newMealName,
-            calories: Int(newMealCals) ?? 0,
-            protein:  Double(newMealProtein) ?? 0,
-            carbs:    Double(newMealCarbs) ?? 0,
-            fat:      Double(newMealFat) ?? 0,
-            notes:    newMealNotes
-        ))
-        newMealName = ""; newMealCals = ""; newMealProtein = ""
-        newMealCarbs = ""; newMealFat = ""; newMealNotes = ""
-        showingAddMeal = false
-    }
-
-    private func savePlan() {
-        guard let tUUID = UUID(uuidString: trainerId),
-              let cUUID = UUID(uuidString: clientId) else { return }
-        isSaving = true
-        let now = Date()
-        let plan = MealPlanRow(
-            id:            UUID(),
-            trainerId:     tUUID,
-            clientId:      cUUID,
-            title:         title,
-            description:   description.isEmpty ? "" : description,
-            meals:         meals,
-            dailyCalories: dailyCalories,
-            proteinG:      proteinG,
-            carbsG:        carbsG,
-            fatG:          fatG,
-            weekStart:     now,
-            isActive:      true,
-            createdAt:     now
-        )
-        Task {
-            do {
-                try await SBMealPlanStore.shared.create(plan)
-                await MainActor.run { isSaving = false; dismiss() }
-            } catch {
-                print("❌ Meal plan save error: \(error)")
-                await MainActor.run { isSaving = false }
-            }
-        }
-    }
-
-    private func macroStepper(
-        _ label: String, value: Binding<Int>, step: Int, color: Color
-    ) -> some View {
-        HStack {
-            Text(label).font(.system(size: 12, weight: .semibold)).foregroundColor(.white.opacity(0.6))
-            Spacer()
-            Button(action: { if value.wrappedValue > step { value.wrappedValue -= step } }) {
-                Image(systemName: "minus.circle.fill").foregroundColor(color).font(.title3)
-            }
-            Text("\(value.wrappedValue)").font(.system(size: 18, weight: .black))
-                .foregroundColor(color).frame(minWidth: 55)
-            Button(action: { value.wrappedValue += step }) {
-                Image(systemName: "plus.circle.fill").foregroundColor(color).font(.title3)
-            }
-        }
-        .padding(12)
-        .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
-    }
-
-    private func macroDoubleStepper(
-        _ label: String, value: Binding<Double>, step: Double, color: Color
-    ) -> some View {
-        VStack(spacing: 6) {
-            Text(label).font(.system(size: 9, weight: .bold)).foregroundColor(color)
-            HStack(spacing: 4) {
-                Button(action: { if value.wrappedValue > step { value.wrappedValue -= step } }) {
-                    Image(systemName: "minus.circle.fill").foregroundColor(color).font(.caption)
-                }
-                Text("\(Int(value.wrappedValue))").font(.system(size: 15, weight: .black))
-                    .foregroundColor(.white).frame(minWidth: 30)
-                Button(action: { value.wrappedValue += step }) {
-                    Image(systemName: "plus.circle.fill").foregroundColor(color).font(.caption)
-                }
-            }
-        }
-        .frame(maxWidth: .infinity).padding(10)
-        .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.05)))
-    }
-
-    private func formBlock<Content: View>(
-        _ label: String, @ViewBuilder content: () -> Content
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(label).font(.system(size: 10, weight: .bold))
-                .tracking(1.2).foregroundColor(.tmGold)
-            content()
-        }
-    }
-}
-
-// MARK: - Stub views
+// MARK: - Stub Views
 
 struct LogWeightView: View {
-    let clientId: String
-    @Environment(\.dismiss) var dismiss
+    let clientId: String; @Environment(\.dismiss) var dismiss
     var body: some View {
         ZStack { Color.black.ignoresSafeArea()
             VStack(spacing: 16) {
@@ -1560,8 +907,7 @@ struct LogWeightView: View {
 }
 
 struct SetWeightGoalView: View {
-    let clientId: String
-    @Environment(\.dismiss) var dismiss
+    let clientId: String; @Environment(\.dismiss) var dismiss
     var body: some View {
         ZStack { Color.black.ignoresSafeArea()
             VStack(spacing: 16) {
@@ -1575,13 +921,11 @@ struct SetWeightGoalView: View {
 struct WeightHistoryView: View {
     let clientId: String
     var body: some View {
-        ZStack { Color.black.ignoresSafeArea()
-            Text("Weight History").foregroundColor(.white)
-        }
-        .navigationTitle("Weight History").navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(Color.black, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
-        .toolbarColorScheme(.dark, for: .navigationBar)
+        ZStack { Color.black.ignoresSafeArea(); Text("Weight History").foregroundColor(.white) }
+            .navigationTitle("Weight History").navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(Color.black, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarColorScheme(.dark, for: .navigationBar)
     }
 }
 
@@ -1600,13 +944,11 @@ struct CheckInCameraView: View {
 struct ClientAllMealPlansView: View {
     let clientId: String
     var body: some View {
-        ZStack { Color.black.ignoresSafeArea()
-            Text("My Meal Plans").foregroundColor(.white)
-        }
-        .navigationTitle("Meal Plans").navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(Color.black, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
-        .toolbarColorScheme(.dark, for: .navigationBar)
+        ZStack { Color.black.ignoresSafeArea(); Text("My Meal Plans").foregroundColor(.white) }
+            .navigationTitle("Meal Plans").navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(Color.black, for: .navigationBar)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarColorScheme(.dark, for: .navigationBar)
     }
 }
 
@@ -1617,7 +959,6 @@ struct ClientMealRow: View {
             Text(meal.name).foregroundColor(.white)
             Spacer()
             Text("\(meal.calories) cal").font(.caption).foregroundColor(.tmGold)
-        }
-        .padding(.vertical, 4)
+        }.padding(.vertical, 4)
     }
 }

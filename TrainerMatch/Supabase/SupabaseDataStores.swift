@@ -84,12 +84,16 @@ class SBWorkoutStore: ObservableObject {
     func markComplete(_ workoutId: UUID) async throws {
         struct Update: Encodable {
             let status: String; let completedAt: Date
-            enum CodingKeys: String, CodingKey { case status; case completedAt = "completed_at" }
+            enum CodingKeys: String, CodingKey {
+                case status; case completedAt = "completed_at"
+            }
         }
         try await supabase.from("workouts")
             .update(Update(status: "completed", completedAt: Date()))
             .eq("id", value: workoutId).execute()
-        if let i = workouts.firstIndex(where: { $0.id == workoutId }) { workouts[i].status = "completed" }
+        if let i = workouts.firstIndex(where: { $0.id == workoutId }) {
+            workouts[i].status = "completed"
+        }
     }
 
     func delete(_ workoutId: UUID) async throws {
@@ -177,29 +181,52 @@ class SBMealPlanStore: ObservableObject {
 // MARK: CHECK-IN STORE
 // MARK: ─────────────────────────────────────────────────────────
 
-struct CheckInRow: Codable, Identifiable {
-    var id:          UUID
-    var trainerId:   UUID
-    var clientId:    UUID
-    var weight:      Double?
-    var notes:       String
-    var photoUrls:   [String]
-    var energyLevel: Int?
-    var sleepHours:  Double?
-    var waterOz:     Int?
-    var checkedInAt: Date?
-    var createdAt:   Date?
+struct CheckInRow: Identifiable {
+    var id:              UUID
+    var trainerId:       UUID
+    var clientId:        UUID
+    var weight:          Double?
+    var notes:           String        // Client notes to trainer
+    var trainerFeedback: String?       // Trainer response — from trainer_feedback column
+    var photoUrls:       [String]
+    var energyLevel:     Int?
+    var sleepHours:      Double?
+    var waterOz:         Int?
+    var checkedInAt:     Date?
+    var createdAt:       Date?
+}
 
+// Decode from Supabase — reads trainer_feedback column
+extension CheckInRow: Decodable {
     enum CodingKeys: String, CodingKey {
         case id, notes, weight
-        case trainerId   = "trainer_id"
-        case clientId    = "client_id"
-        case photoUrls   = "photo_urls"
-        case energyLevel = "energy_level"
-        case sleepHours  = "sleep_hours"
-        case waterOz     = "water_oz"
-        case checkedInAt = "checked_in_at"
-        case createdAt   = "created_at"
+        case trainerId       = "trainer_id"
+        case clientId        = "client_id"
+        case trainerFeedback = "trainer_feedback"
+        case photoUrls       = "photo_urls"
+        case energyLevel     = "energy_level"
+        case sleepHours      = "sleep_hours"
+        case waterOz         = "water_oz"
+        case checkedInAt     = "checked_in_at"
+        case createdAt       = "created_at"
+    }
+}
+
+// Encode for insert — omits trainer_feedback (set separately by trainer)
+extension CheckInRow: Encodable {
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id,          forKey: .id)
+        try c.encode(trainerId,   forKey: .trainerId)
+        try c.encode(clientId,    forKey: .clientId)
+        try c.encode(notes,       forKey: .notes)
+        try c.encode(photoUrls,   forKey: .photoUrls)
+        try c.encodeIfPresent(weight,      forKey: .weight)
+        try c.encodeIfPresent(energyLevel, forKey: .energyLevel)
+        try c.encodeIfPresent(sleepHours,  forKey: .sleepHours)
+        try c.encodeIfPresent(waterOz,     forKey: .waterOz)
+        try c.encodeIfPresent(checkedInAt, forKey: .checkedInAt)
+        try c.encodeIfPresent(createdAt,   forKey: .createdAt)
     }
 }
 
@@ -222,7 +249,8 @@ class SBCheckInStore: ObservableObject {
         var urls: [String] = []
         for (i, photoData) in photos.enumerated() {
             let path = "\(checkIn.clientId)/checkin_\(checkIn.id)_\(i).jpg"
-            let url  = try await SupabaseStorage.uploadImage(data: photoData, bucket: .checkInPhotos, path: path)
+            let url  = try await SupabaseStorage.uploadImage(
+                data: photoData, bucket: .checkInPhotos, path: path)
             urls.append(url)
         }
         c.photoUrls = urls
@@ -249,7 +277,9 @@ class SBCheckInStore: ObservableObject {
         try await supabase.from("check_ins")
             .update(Update(notes: checkIn.notes))
             .eq("id", value: checkIn.id).execute()
-        if let i = checkIns.firstIndex(where: { $0.id == checkIn.id }) { checkIns[i] = checkIn }
+        if let i = checkIns.firstIndex(where: { $0.id == checkIn.id }) {
+            checkIns[i] = checkIn
+        }
     }
 }
 
@@ -345,59 +375,36 @@ class SBMessageStore: ObservableObject {
     private var currentTrainerId: UUID? = nil
     private var currentClientId:  UUID? = nil
 
-    // ✅ Public init so SupabaseChatView can create its own instance
     init() {}
-
-    // MARK: - Fetch (no realtime blocking)
 
     func fetchMessages(trainerId: UUID, clientId: UUID) async throws {
         currentTrainerId = trainerId
         currentClientId  = clientId
-
         print("📥 fetchMessages start — trainer:\(trainerId) client:\(clientId)")
-
         messages = try await supabase
-            .from("messages")
-            .select()
+            .from("messages").select()
             .eq("trainer_id", value: trainerId)
             .eq("client_id",  value: clientId)
             .order("sent_at", ascending: true)
-            .execute()
-            .value
-
+            .execute().value
         print("📥 fetchMessages done — \(messages.count) messages loaded")
-
-        // Mark read in background, don't await
         Task { await markAllRead(trainerId: trainerId, clientId: clientId) }
-
-        // Start realtime in background, don't await — this was causing the freeze
         startRealtimeInBackground(trainerId: trainerId, clientId: clientId)
     }
 
-    // MARK: - Realtime (background, non-blocking)
-
     private func startRealtimeInBackground(trainerId: UUID, clientId: UUID) {
-        // Cancel any existing realtime task
         realtimeTask?.cancel()
-
         realtimeTask = Task { [weak self] in
             guard let self else { return }
-            print("🔌 Starting realtime subscription...")
-
             do {
                 let channel = await supabase.realtimeV2.channel(
                     "msgs_\(trainerId.uuidString.prefix(8))_\(clientId.uuidString.prefix(8))"
                 )
-
                 let changes = await channel.postgresChange(
-                    InsertAction.self,
-                    schema: "public",
-                    table:  "messages"
+                    InsertAction.self, schema: "public", table: "messages"
                 )
-
                 await channel.subscribe()
                 print("✅ Realtime subscribed")
-
                 for await _ in changes {
                     guard !Task.isCancelled else { break }
                     if let updated = try? await supabase
@@ -410,22 +417,16 @@ class SBMessageStore: ObservableObject {
                         await MainActor.run { self.messages = updated }
                     }
                 }
-
                 await supabase.realtimeV2.removeChannel(channel)
             }
         }
     }
 
-    // MARK: - Send (optimistic)
-
     func send(_ message: MessageRow) async throws {
         print("💾 Inserting to Supabase...")
         messages.append(message)
         do {
-            try await supabase
-                .from("messages")
-                .insert(message)
-                .execute()
+            try await supabase.from("messages").insert(message).execute()
             print("💾 Insert success")
         } catch {
             messages.removeAll { $0.id == message.id }
@@ -434,15 +435,12 @@ class SBMessageStore: ObservableObject {
         }
     }
 
-    // MARK: - Mark All Read
-
     private func markAllRead(trainerId: UUID, clientId: UUID) async {
         struct Update: Encodable {
             let isRead: Bool
             enum CodingKeys: String, CodingKey { case isRead = "is_read" }
         }
-        try? await supabase
-            .from("messages")
+        try? await supabase.from("messages")
             .update(Update(isRead: true))
             .eq("trainer_id", value: trainerId)
             .eq("client_id",  value: clientId)
@@ -450,13 +448,10 @@ class SBMessageStore: ObservableObject {
             .execute()
     }
 
-    // MARK: - Unread Count
-
     func unreadCount(trainerId: UUID, clientId: UUID, myRole: String) async -> Int {
         let opposite = myRole == "trainer" ? "client" : "trainer"
         let result = try? await supabase
-            .from("messages")
-            .select("id", count: .exact)
+            .from("messages").select("id", count: .exact)
             .eq("trainer_id",  value: trainerId)
             .eq("client_id",   value: clientId)
             .eq("sender_role", value: opposite)
@@ -465,15 +460,11 @@ class SBMessageStore: ObservableObject {
         return result?.count ?? 0
     }
 
-    // MARK: - Unsubscribe
-
     func unsubscribe() async {
         realtimeTask?.cancel()
         realtimeTask = nil
         print("🔌 Realtime unsubscribed")
     }
-
-    // MARK: - Clear
 
     func clear() {
         messages = []
@@ -611,7 +602,8 @@ class SBGymAdStore: ObservableObject {
         var a = ad
         if let logoData = logoData {
             let path = "\(ad.id)/logo.jpg"
-            let url  = try await SupabaseStorage.uploadImage(data: logoData, bucket: .gymAds, path: path)
+            let url  = try await SupabaseStorage.uploadImage(
+                data: logoData, bucket: .gymAds, path: path)
             a.imageUrl = url
         }
         try await supabase.from("gym_ads").insert(a).execute()

@@ -10,6 +10,8 @@
 		99110B612FA1C256004578D6 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 99110B602FA1C256004578D6 /* Supabase */; };
 		99110C1F2FA84BC2004578D6 /* OneSignalFramework in Frameworks */ = {isa = PBXBuildFile; productRef = 99110C1E2FA84BC2004578D6 /* OneSignalFramework */; };
 		99501EA62F989F4D00939A52 /* StripePaymentSheet in Frameworks */ = {isa = PBXBuildFile; productRef = 99501EA52F989F4D00939A52 /* StripePaymentSheet */; };
+		997FC7E32FCCCC9800E2B1D7 /* RtcBasic in Frameworks */ = {isa = PBXBuildFile; productRef = 997FC7E22FCCCC9800E2B1D7 /* RtcBasic */; };
+		997FC7E52FCCCCC900E2B1D7 /* VideoAv1CodecEnc in Frameworks */ = {isa = PBXBuildFile; productRef = 997FC7E42FCCCCC900E2B1D7 /* VideoAv1CodecEnc */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -73,7 +75,9 @@
 			files = (
 				99110B612FA1C256004578D6 /* Supabase in Frameworks */,
 				99110C1F2FA84BC2004578D6 /* OneSignalFramework in Frameworks */,
+				997FC7E52FCCCCC900E2B1D7 /* VideoAv1CodecEnc in Frameworks */,
 				99501EA62F989F4D00939A52 /* StripePaymentSheet in Frameworks */,
+				997FC7E32FCCCC9800E2B1D7 /* RtcBasic in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -145,6 +149,8 @@
 				99501EA52F989F4D00939A52 /* StripePaymentSheet */,
 				99110B602FA1C256004578D6 /* Supabase */,
 				99110C1E2FA84BC2004578D6 /* OneSignalFramework */,
+				997FC7E22FCCCC9800E2B1D7 /* RtcBasic */,
+				997FC7E42FCCCCC900E2B1D7 /* VideoAv1CodecEnc */,
 			);
 			productName = TrainerMatch;
 			productReference = 99242EAE2F3C176400AC6258 /* TrainerMatch.app */;
@@ -232,6 +238,7 @@
 				99501EA42F989F4D00939A52 /* XCRemoteSwiftPackageReference "stripe-ios" */,
 				99110B552FA1BC8D004578D6 /* XCRemoteSwiftPackageReference "supabase-swift" */,
 				99110C1D2FA8496A004578D6 /* XCRemoteSwiftPackageReference "OneSignal-iOS-SDK" */,
+				997FC7DF2FCCC77D00E2B1D7 /* XCRemoteSwiftPackageReference "AgoraRtcEngine_iOS" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 99242EAF2F3C176400AC6258 /* Products */;
@@ -440,6 +447,7 @@
 				INFOPLIST_FILE = TrainerMatch/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Nearby Trainers";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.healthcare-fitness";
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Camera access required to take live photos for profiles and progress updates";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "TrainerMatch needs access to read your step count and distance data to track your daily fitness progress and display your activity in the health dashboard.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "TrainerMatch needs access to update your health data to log workouts and fitness activities.";
@@ -449,6 +457,7 @@
 				INFOPLIST_KEY_NSLocationUsageDescription = "Location access required to see Nearby trainers using phone location";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Permission required for trainer and client video communication";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Only selected Photos used for profile updates and progress photos ";
+				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -485,6 +494,7 @@
 				INFOPLIST_FILE = TrainerMatch/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Nearby Trainers";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.healthcare-fitness";
+				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_NSCameraUsageDescription = "Camera access required to take live photos for profiles and progress updates";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "TrainerMatch needs access to read your step count and distance data to track your daily fitness progress and display your activity in the health dashboard.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "TrainerMatch needs access to update your health data to log workouts and fitness activities.";
@@ -494,6 +504,7 @@
 				INFOPLIST_KEY_NSLocationUsageDescription = "Location access required to see Nearby trainers using phone location";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Permission required for trainer and client video communication";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Only selected Photos used for profile updates and progress photos ";
+				INFOPLIST_KEY_NSSupportsLiveActivities = YES;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -650,6 +661,14 @@
 				minimumVersion = 25.11.0;
 			};
 		};
+		997FC7DF2FCCC77D00E2B1D7 /* XCRemoteSwiftPackageReference "AgoraRtcEngine_iOS" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/AgoraIO/AgoraRtcEngine_iOS";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 4.6.2;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -667,6 +686,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 99501EA42F989F4D00939A52 /* XCRemoteSwiftPackageReference "stripe-ios" */;
 			productName = StripePaymentSheet;
+		};
+		997FC7E22FCCCC9800E2B1D7 /* RtcBasic */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 997FC7DF2FCCC77D00E2B1D7 /* XCRemoteSwiftPackageReference "AgoraRtcEngine_iOS" */;
+			productName = RtcBasic;
+		};
+		997FC7E42FCCCCC900E2B1D7 /* VideoAv1CodecEnc */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 997FC7DF2FCCC77D00E2B1D7 /* XCRemoteSwiftPackageReference "AgoraRtcEngine_iOS" */;
+			productName = VideoAv1CodecEnc;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

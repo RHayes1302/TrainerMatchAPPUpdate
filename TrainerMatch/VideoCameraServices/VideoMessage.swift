@@ -2,86 +2,67 @@
 //  VideoMessage.swift
 //  TrainerMatch
 //
-//  Video messaging system — trainers record and send video feedback to clients.
-//  Videos are uploaded to Supabase Storage so clients can stream them on any device.
-//
 
 import Foundation
 
 struct VideoMessage: Identifiable, Codable {
-    let id:           String
-    var trainerId:    String
-    var clientId:     String
-    var title:        String
-    var message:      String
-    var videoFileName: String       // local filename (trainer device only)
-    var supabaseURL:  String?       // remote URL — clients stream from this
-    var duration:     TimeInterval
-    var dateCreated:  Date
-    var isViewed:     Bool
-    var viewedDate:   Date?
-    var messageType:  MessageType
-    var uploadStatus: UploadStatus
+    var id:            String
+    var trainerId:     String
+    var clientId:      String
+    var title:         String
+    var message:       String
+    var videoFileName: String
+    var duration:      Double
+    var messageType:   MessageType
+    var uploadStatus:  UploadStatus
+    var supabaseURL:   String?
+    var isViewed:      Bool
+    var viewedDate:    Date?
+    var dateCreated:   Date
 
-    enum MessageType: String, Codable, CaseIterable {
-        case progressFeedback   = "Progress Feedback"
-        case workoutInstructions = "Workout Instructions"
-        case motivational       = "Motivational Message"
-        case checkIn            = "Check-In"
-        case formCorrection     = "Form Correction"
-        case general            = "General Message"
-    }
-
-    enum UploadStatus: String, Codable {
-        case local      // recorded but not yet uploaded
-        case uploading  // in progress
-        case uploaded   // available to client via supabaseURL
-        case failed     // upload failed — retry available
-    }
-
-    init(trainerId:    String,
-         clientId:    String,
-         title:       String,
-         message:     String,
+    init(trainerId:     String,
+         clientId:      String,
+         title:         String,
+         message:       String,
          videoFileName: String,
-         duration:    TimeInterval,
-         messageType: MessageType = .general) {
+         duration:      Double,
+         messageType:   MessageType) {
         self.id            = UUID().uuidString
         self.trainerId     = trainerId
         self.clientId      = clientId
         self.title         = title
         self.message       = message
         self.videoFileName = videoFileName
-        self.supabaseURL   = nil
         self.duration      = duration
-        self.dateCreated   = Date()
-        self.isViewed      = false
         self.messageType   = messageType
-        self.uploadStatus  = .local
+        self.uploadStatus  = .pending
+        self.supabaseURL   = nil
+        self.isViewed      = false
+        self.viewedDate    = nil
+        self.dateCreated   = Date()
     }
 
     // MARK: - Computed
 
-    /// Local file URL on the trainer's device
     var localVideoURL: URL {
-        FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        FileManager.default
+            .urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent(videoFileName)
     }
 
-    /// URL to use for playback — prefers Supabase (accessible everywhere),
-    /// falls back to local file (trainer device only)
     var playbackURL: URL? {
-        if let remote = supabaseURL, let url = URL(string: remote) {
-            return url
-        }
+        if let s = supabaseURL, !s.isEmpty { return URL(string: s) }
         let local = localVideoURL
         return FileManager.default.fileExists(atPath: local.path) ? local : nil
     }
 
-    /// Whether this video can be played on the client's device
-    var isAvailableToClient: Bool { supabaseURL != nil }
-
     var isNew: Bool { !isViewed }
+
+    var formattedDuration: String {
+        let mins = Int(duration) / 60
+        let secs = Int(duration) % 60
+        return mins > 0 ? "\(mins)m \(secs)s" : "\(secs)s"
+    }
 
     var formattedDate: String {
         let f = DateFormatter()
@@ -90,23 +71,69 @@ struct VideoMessage: Identifiable, Codable {
         return f.string(from: dateCreated)
     }
 
-    var formattedDuration: String {
-        let m = Int(duration) / 60
-        let s = Int(duration) % 60
-        return String(format: "%02d:%02d", m, s)
-    }
-
     var timeAgo: String {
-        let c = Calendar.current.dateComponents(
-            [.minute, .hour, .day, .weekOfYear], from: dateCreated, to: Date())
-        if let w = c.weekOfYear, w > 0 { return "\(w)w ago" }
-        if let d = c.day,       d > 0  { return "\(d)d ago" }
-        if let h = c.hour,      h > 0  { return "\(h)h ago" }
-        if let m = c.minute,    m > 0  { return "\(m)m ago" }
-        return "Just now"
+        let s = Int(Date().timeIntervalSince(dateCreated))
+        if s < 60    { return "just now" }
+        if s < 3600  { return "\(s/60)m ago" }
+        if s < 86400 { return "\(s/3600)h ago" }
+        let d = s/86400
+        if d < 7 { return "\(d)d ago" }
+        let f = DateFormatter(); f.dateStyle = .medium
+        return f.string(from: dateCreated)
     }
 
-    // MARK: - Sample data
+    // MARK: - MessageType
+    enum MessageType: String, Codable, CaseIterable, Identifiable {
+        var id: String { rawValue }
+        case progressFeedback    = "progress_feedback"
+        case workoutInstructions = "workout_instructions"
+        case motivational        = "motivational"
+        case checkIn             = "check_in"
+        case formCorrection      = "form_correction"
+        case general             = "general"
 
-    static let sampleMessages: [VideoMessage] = []
+        var displayName: String {
+            switch self {
+            case .progressFeedback:    return "Progress Feedback"
+            case .workoutInstructions: return "Workout Instructions"
+            case .motivational:        return "Motivational"
+            case .checkIn:             return "Check-In"
+            case .formCorrection:      return "Form Correction"
+            case .general:             return "General"
+            }
+        }
+
+        var icon: String {
+            switch self {
+            case .progressFeedback:    return "chart.line.uptrend.xyaxis"
+            case .workoutInstructions: return "dumbbell.fill"
+            case .motivational:        return "flame.fill"
+            case .checkIn:             return "checkmark.circle.fill"
+            case .formCorrection:      return "figure.run"
+            case .general:             return "video.fill"
+            }
+        }
+    }
+
+    // MARK: - UploadStatus
+    enum UploadStatus: String, Codable {
+        case pending   = "pending"
+        case uploading = "uploading"
+        case uploaded  = "uploaded"
+        case failed    = "failed"
+    }
+
+    // MARK: - CodingKeys
+    enum CodingKeys: String, CodingKey {
+        case id, title, message, duration
+        case trainerId     = "trainer_id"
+        case clientId      = "client_id"
+        case videoFileName = "video_file_name"
+        case messageType   = "message_type"
+        case uploadStatus  = "upload_status"
+        case supabaseURL   = "supabase_url"
+        case isViewed      = "is_viewed"
+        case viewedDate    = "viewed_date"
+        case dateCreated   = "date_created"
+    }
 }

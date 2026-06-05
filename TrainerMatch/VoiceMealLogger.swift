@@ -20,14 +20,14 @@ import AVFoundation
 struct MealLogEntry: Codable, Identifiable {
     var id:           UUID
     var clientId:     UUID
-    var rawText:      String        // what the user said
-    var mealName:     String        // parsed: "Scrambled Eggs & Oatmeal"
-    var mealType:     String        // Breakfast / Lunch / Dinner / Snack
+    var rawText:      String
+    var mealName:     String
+    var mealType:     String
     var calories:     Int
     var proteinG:     Double
     var carbsG:       Double
     var fatG:         Double
-    var foods:        [ParsedFood]  // individual items
+    var foods:        [ParsedFood]
     var loggedAt:     Date?
     var createdAt:    Date?
 
@@ -48,7 +48,7 @@ struct MealLogEntry: Codable, Identifiable {
 struct ParsedFood: Codable, Identifiable {
     var id:       UUID = UUID()
     var name:     String
-    var quantity:  String   // "2 large" / "1 cup"
+    var quantity: String
     var calories: Int
     var proteinG: Double
     var carbsG:   Double
@@ -61,73 +61,40 @@ struct ParsedFood: Codable, Identifiable {
 class ClaudeMealParser: ObservableObject {
 
     struct ParsedMeal: Codable {
-        var mealName:  String
-        var mealType:  String
-        var calories:  Int
-        var proteinG:  Double
-        var carbsG:    Double
-        var fatG:      Double
-        var foods:     [ParsedFood]
-        var confidence: String   // "high" / "medium" / "estimated"
+        var mealName:   String
+        var mealType:   String
+        var calories:   Int
+        var proteinG:   Double
+        var carbsG:     Double
+        var fatG:       Double
+        var foods:      [ParsedFood]
+        var confidence: String
     }
 
+    // Anthropic key lives in Supabase Edge Function — never on device
+    private let edgeFunctionURL = "https://axmxhxdqfxedltjclssz.supabase.co/functions/v1/parse-meal"
+
     func parse(speechText: String) async throws -> ParsedMeal {
-        let prompt = """
-        You are a nutrition expert. The user described a meal by speaking:
-        "\(speechText)"
+        let session = try await supabase.auth.session
 
-        Parse this into structured nutrition data. Return ONLY valid JSON with no markdown, no explanation, no backticks.
-
-        Use this exact schema:
-        {
-          "mealName": "Short descriptive name for the meal",
-          "mealType": "Breakfast" | "Lunch" | "Dinner" | "Snack",
-          "calories": integer,
-          "proteinG": number,
-          "carbsG": number,
-          "fatG": number,
-          "confidence": "high" | "medium" | "estimated",
-          "foods": [
-            {
-              "id": "unique-uuid-string",
-              "name": "food name",
-              "quantity": "amount and unit",
-              "calories": integer,
-              "proteinG": number,
-              "carbsG": number,
-              "fatG": number
-            }
-          ]
-        }
-
-        Rules:
-        - Use standard USDA nutrition values where known
-        - If quantity is unclear, assume a standard serving
-        - mealType should infer from context (e.g. "morning coffee" = Breakfast)
-        - If completely unable to parse, return calories: 0 and confidence: "estimated"
-        - Always return valid JSON — never return text or explanations
-        """
-
-        let body: [String: Any] = [
-            "model": "claude-sonnet-4-20250514",
-            "max_tokens": 1000,
-            "messages": [["role": "user", "content": prompt]]
-        ]
-
-        let url = URL(string: "https://api.anthropic.com/v1/messages")!
+        let url = URL(string: edgeFunctionURL)!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        request.setValue("Bearer \(session.accessToken)", forHTTPHeaderField: "Authorization")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["speechText": speechText])
 
-        let (data, _) = try await URLSession.shared.data(for: request)
-        let response  = try JSONDecoder().decode(AnthropicResponse.self, from: data)
+        let (data, response) = try await URLSession.shared.data(for: request)
 
-        guard let content = response.content.first?.text else {
+        guard (response as? HTTPURLResponse)?.statusCode == 200 else {
             throw MealParseError.noResponse
         }
 
-        // Strip any accidental markdown fences
+        let anthropicResponse = try JSONDecoder().decode(AnthropicResponse.self, from: data)
+        guard let content = anthropicResponse.content.first?.text else {
+            throw MealParseError.noResponse
+        }
+
         let clean = content
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "```json", with: "")
@@ -145,7 +112,7 @@ class ClaudeMealParser: ObservableObject {
 
     enum MealParseError: LocalizedError {
         case noResponse
-        var errorDescription: String? { "Could not parse meal from Claude response." }
+        var errorDescription: String? { "Could not analyze your meal. Please try again." }
     }
 }
 
@@ -169,6 +136,18 @@ class MealLogStore: ObservableObject {
             .value
     }
 
+    func fetchHistoryForClient(_ clientId: UUID, days: Int = 7) async throws -> [MealLogEntry] {
+        let since = Calendar.current.date(byAdding: .day, value: -days, to: Date())!
+        return try await supabase
+            .from("meal_logs")
+            .select()
+            .eq("client_id", value: clientId)
+            .gte("logged_at", value: since.ISO8601Format())
+            .order("logged_at", ascending: false)
+            .execute()
+            .value
+    }
+
     func save(_ entry: MealLogEntry) async throws {
         try await supabase.from("meal_logs").insert(entry).execute()
         logs.insert(entry, at: 0)
@@ -179,7 +158,7 @@ class MealLogStore: ObservableObject {
         logs.removeAll { $0.id == id }
     }
 
-    var todayCalories: Int { logs.reduce(0) { $0 + $1.calories } }
+    var todayCalories: Int    { logs.reduce(0) { $0 + $1.calories } }
     var todayProtein:  Double { logs.reduce(0) { $0 + $1.proteinG } }
     var todayCarbs:    Double { logs.reduce(0) { $0 + $1.carbsG } }
     var todayFat:      Double { logs.reduce(0) { $0 + $1.fatG } }
@@ -189,14 +168,14 @@ class MealLogStore: ObservableObject {
 
 @MainActor
 class SpeechRecognizer: ObservableObject {
-    @Published var transcript   = ""
-    @Published var isRecording  = false
-    @Published var error:  String? = nil
+    @Published var transcript  = ""
+    @Published var isRecording = false
+    @Published var error: String? = nil
 
-    private var recognizer:     SFSpeechRecognizer?
-    private var request:        SFSpeechAudioBufferRecognitionRequest?
-    private var task:           SFSpeechRecognitionTask?
-    private let audioEngine     = AVAudioEngine()
+    private var recognizer: SFSpeechRecognizer?
+    private var request:    SFSpeechAudioBufferRecognitionRequest?
+    private var task:       SFSpeechRecognitionTask?
+    private let audioEngine = AVAudioEngine()
 
     init() {
         recognizer = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
@@ -232,9 +211,7 @@ class SpeechRecognizer: ObservableObject {
         task = recognizer?.recognitionTask(with: request) { [weak self] result, err in
             guard let self else { return }
             if let result {
-                Task { @MainActor in
-                    self.transcript = result.bestTranscription.formattedString
-                }
+                Task { @MainActor in self.transcript = result.bestTranscription.formattedString }
             }
             if err != nil || result?.isFinal == true {
                 Task { @MainActor in self.stopRecording() }
@@ -247,8 +224,8 @@ class SpeechRecognizer: ObservableObject {
         audioEngine.inputNode.removeTap(onBus: 0)
         request?.endAudio()
         task?.cancel()
-        request    = nil
-        task       = nil
+        request     = nil
+        task        = nil
         isRecording = false
     }
 }
@@ -259,19 +236,17 @@ struct VoiceMealLoggerView: View {
     let clientId: String
     @Environment(\.dismiss) var dismiss
 
-    @StateObject private var speech  = SpeechRecognizer()
-    @StateObject private var parser  = ClaudeMealParser()
-    @StateObject private var store   = MealLogStore.shared
+    @StateObject private var speech = SpeechRecognizer()
+    @StateObject private var parser = ClaudeMealParser()
+    @StateObject private var store  = MealLogStore.shared
 
     @State private var phase: LogPhase = .idle
     @State private var parsedMeal: ClaudeMealParser.ParsedMeal? = nil
-    @State private var errorMessage  = ""
-    @State private var showError     = false
+    @State private var errorMessage = ""
+    @State private var showError    = false
     @State private var hasPermission = false
 
-    enum LogPhase {
-        case idle, recording, parsing, review, saved
-    }
+    enum LogPhase { case idle, recording, parsing, review, saved }
 
     var body: some View {
         ZStack {
@@ -281,11 +256,11 @@ struct VoiceMealLoggerView: View {
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 24) {
                         switch phase {
-                        case .idle:     idleView
+                        case .idle:      idleView
                         case .recording: recordingView
-                        case .parsing:  parsingView
-                        case .review:   reviewView
-                        case .saved:    savedView
+                        case .parsing:   parsingView
+                        case .review:    reviewView
+                        case .saved:     savedView
                         }
                     }
                     .padding(20)
@@ -316,7 +291,6 @@ struct VoiceMealLoggerView: View {
             Spacer()
             Text("Voice Meal Log").font(.system(size: 17, weight: .bold)).foregroundColor(.white)
             Spacer()
-            // balance
             Color.clear.frame(width: 60)
         }
         .padding(.horizontal, 20).padding(.vertical, 14)
@@ -328,7 +302,6 @@ struct VoiceMealLoggerView: View {
     private var idleView: some View {
         VStack(spacing: 32) {
             Spacer().frame(height: 40)
-
             VStack(spacing: 16) {
                 Image(systemName: "fork.knife.circle.fill")
                     .font(.system(size: 72)).foregroundColor(.tmGold.opacity(0.8))
@@ -338,18 +311,13 @@ struct VoiceMealLoggerView: View {
                     .font(.subheadline).foregroundColor(.white.opacity(0.5))
                     .multilineTextAlignment(.center)
             }
-
-            // Example prompts
             VStack(spacing: 10) {
                 exampleChip("\"I had two scrambled eggs and oatmeal for breakfast\"")
                 exampleChip("\"Grilled chicken salad with olive oil dressing for lunch\"")
                 exampleChip("\"Protein shake with banana and peanut butter\"")
             }
-
             Spacer()
-
             micButton
-
             if !hasPermission {
                 Text("Microphone & speech recognition permissions required.\nPlease enable in Settings.")
                     .font(.caption).foregroundColor(.red.opacity(0.8))
@@ -371,38 +339,29 @@ struct VoiceMealLoggerView: View {
     private var recordingView: some View {
         VStack(spacing: 32) {
             Spacer().frame(height: 40)
-
-            // Animated mic indicator
             ZStack {
                 ForEach(0..<3) { i in
                     Circle()
                         .stroke(Color.tmGold.opacity(0.3 - Double(i) * 0.08), lineWidth: 2)
                         .frame(width: CGFloat(120 + i * 40), height: CGFloat(120 + i * 40))
-                        .scaleEffect(1.0)
-                        .animation(.easeInOut(duration: 1.2).repeatForever().delay(Double(i) * 0.3), value: speech.isRecording)
+                        .animation(.easeInOut(duration: 1.2).repeatForever().delay(Double(i) * 0.3),
+                                   value: speech.isRecording)
                 }
                 Circle().fill(Color.red).frame(width: 100, height: 100)
                     .overlay(Image(systemName: "mic.fill").font(.system(size: 40)).foregroundColor(.white))
             }
-
-            Text("Listening...")
-                .font(.system(size: 22, weight: .bold)).foregroundColor(.white)
-
-            // Live transcript
+            Text("Listening...").font(.system(size: 22, weight: .bold)).foregroundColor(.white)
             if !speech.transcript.isEmpty {
                 Text(speech.transcript)
                     .font(.system(size: 16)).foregroundColor(.tmGold)
-                    .multilineTextAlignment(.center)
-                    .padding(16)
+                    .multilineTextAlignment(.center).padding(16)
                     .background(RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.06)))
                     .animation(.easeInOut, value: speech.transcript)
             } else {
                 Text("Start speaking...")
                     .font(.system(size: 16)).foregroundColor(.white.opacity(0.3)).italic()
             }
-
             Spacer()
-
             Button(action: stopAndParse) {
                 HStack(spacing: 10) {
                     Image(systemName: "stop.circle.fill").font(.title2)
@@ -422,7 +381,6 @@ struct VoiceMealLoggerView: View {
             ProgressView().tint(.tmGold).scaleEffect(1.6)
             Text("Analyzing your meal...").font(.title3).fontWeight(.semibold).foregroundColor(.white)
             Text("Claude AI is calculating nutrition info").font(.subheadline).foregroundColor(.white.opacity(0.4))
-
             if !speech.transcript.isEmpty {
                 Text("\"\(speech.transcript)\"")
                     .font(.system(size: 15)).foregroundColor(.tmGold).italic()
@@ -439,20 +397,16 @@ struct VoiceMealLoggerView: View {
             guard let meal = parsedMeal else { return AnyView(EmptyView()) }
             return AnyView(
                 VStack(spacing: 20) {
-                    // Header card
                     VStack(spacing: 8) {
                         HStack {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(meal.mealName)
                                     .font(.system(size: 20, weight: .black)).foregroundColor(.white)
-                                Text(meal.mealType)
-                                    .font(.subheadline).foregroundColor(.tmGold)
+                                Text(meal.mealType).font(.subheadline).foregroundColor(.tmGold)
                             }
                             Spacer()
                             confidenceBadge(meal.confidence)
                         }
-
-                        // Original transcript
                         Text("\"\(speech.transcript)\"")
                             .font(.caption).foregroundColor(.white.opacity(0.4)).italic()
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -460,20 +414,17 @@ struct VoiceMealLoggerView: View {
                     .padding(16)
                     .background(RoundedRectangle(cornerRadius: 16).fill(Color.white.opacity(0.06)))
 
-                    // Macro summary
-                    macroRow(calories: meal.calories, protein: meal.proteinG, carbs: meal.carbsG, fat: meal.fatG)
+                    macroRow(calories: meal.calories, protein: meal.proteinG,
+                             carbs: meal.carbsG, fat: meal.fatG)
 
-                    // Individual foods
                     if !meal.foods.isEmpty {
                         VStack(alignment: .leading, spacing: 10) {
-                            Text("BREAKDOWN").font(.system(size: 10, weight: .bold)).tracking(1.2).foregroundColor(.tmGold)
-                            ForEach(meal.foods) { food in
-                                foodRow(food)
-                            }
+                            Text("BREAKDOWN")
+                                .font(.system(size: 10, weight: .bold)).tracking(1.2).foregroundColor(.tmGold)
+                            ForEach(meal.foods) { food in foodRow(food) }
                         }
                     }
 
-                    // Actions
                     VStack(spacing: 12) {
                         Button(action: saveMeal) {
                             Text("LOG THIS MEAL")
@@ -497,8 +448,7 @@ struct VoiceMealLoggerView: View {
     private var savedView: some View {
         VStack(spacing: 24) {
             Spacer().frame(height: 60)
-            Image(systemName: "checkmark.circle.fill")
-                .font(.system(size: 80)).foregroundColor(.green)
+            Image(systemName: "checkmark.circle.fill").font(.system(size: 80)).foregroundColor(.green)
             Text("Meal Logged!").font(.system(size: 28, weight: .black)).foregroundColor(.white)
             if let meal = parsedMeal {
                 Text("\(meal.mealName) — \(meal.calories) calories")
@@ -590,10 +540,7 @@ struct VoiceMealLoggerView: View {
 
     private func stopAndParse() {
         speech.stopRecording()
-        guard !speech.transcript.isEmpty else {
-            phase = .idle
-            return
-        }
+        guard !speech.transcript.isEmpty else { phase = .idle; return }
         phase = .parsing
         Task {
             do {
@@ -630,19 +577,19 @@ struct VoiceMealLoggerView: View {
     }
 
     private func retryRecording() {
-        parsedMeal = nil
+        parsedMeal        = nil
         speech.transcript = ""
-        phase = .idle
+        phase             = .idle
     }
 
     private func logAnother() {
-        parsedMeal = nil
+        parsedMeal        = nil
         speech.transcript = ""
-        phase = .idle
+        phase             = .idle
     }
 }
 
-// MARK: - Daily Nutrition Summary (add to client hub)
+// MARK: - Daily Nutrition Summary
 
 struct DailyNutritionSummaryView: View {
     let clientId: String
@@ -669,7 +616,6 @@ struct DailyNutritionSummaryView: View {
                 }
             }
 
-            // Macro totals
             HStack(spacing: 0) {
                 macroCell("\(store.todayCalories)", "cal", .tmGold)
                 Divider().background(Color.white.opacity(0.08)).frame(height: 36)
@@ -682,13 +628,14 @@ struct DailyNutritionSummaryView: View {
             .padding(.vertical, 12)
             .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.04)))
 
-            // Today's meals list
             if store.logs.isEmpty {
                 HStack(spacing: 10) {
                     Image(systemName: "mic.circle").font(.title2).foregroundColor(.tmGold.opacity(0.4))
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("No meals logged today").font(.subheadline).foregroundColor(.white.opacity(0.5))
-                        Text("Tap Log Meal and just say what you ate").font(.caption).foregroundColor(.white.opacity(0.3))
+                        Text("No meals logged today")
+                            .font(.subheadline).foregroundColor(.white.opacity(0.5))
+                        Text("Tap Log Meal and just say what you ate")
+                            .font(.caption).foregroundColor(.white.opacity(0.3))
                     }
                 }
                 .padding(14)

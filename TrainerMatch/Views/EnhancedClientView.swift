@@ -13,9 +13,11 @@ struct EnhancedClientDetailView: View {
     @ObservedObject private var authManager = AuthManager.shared
     let client: Client
 
-    @State private var showingVideoCamera  = false
-    @State private var showingAllMessages  = false
-    @State private var showingShareFile    = false
+    @State private var showingVideoCamera    = false
+    @State private var showingAllMessages    = false
+    @State private var showingShareFile      = false
+    @State private var showingVideoCallInvite = false
+    @State private var showingLiveCall       = false
 
     var stats: ClientStats { trainerViewModel.getClientStats(for: client) }
 
@@ -26,6 +28,13 @@ struct EnhancedClientDetailView: View {
         videoMessageViewModel.getUnviewedCount(for: client.id)
     }
 
+    var callChannel: String {
+        VideoCallManager.channelName(
+            trainerId: authManager.currentTrainerProfile?.id ?? "",
+            clientId:  client.id
+        )
+    }
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
@@ -33,16 +42,17 @@ struct EnhancedClientDetailView: View {
                 VStack(spacing: 20) {
                     ClientHeaderSection(client: client, stats: stats)
                     QuickActionsSection(
-                        onSendVideo:    { showingVideoCamera = true },
-                        onViewMessages: { showingAllMessages = true },
-                        onShareFile:    { showingShareFile   = true },
-                        unviewedCount:  unviewedMessageCount
+                        onSendVideo:     { showingVideoCamera     = true },
+                        onViewMessages:  { showingAllMessages     = true },
+                        onShareFile:     { showingShareFile       = true },
+                        onStartCall:     { showingVideoCallInvite = true },
+                        unviewedCount:   unviewedMessageCount
                     )
                     if !recentMessages.isEmpty {
                         RecentMessagesSection(
-                            messages:   recentMessages,
-                            viewModel:  videoMessageViewModel,
-                            onViewAll:  { showingAllMessages = true }
+                            messages:  recentMessages,
+                            viewModel: videoMessageViewModel,
+                            onViewAll: { showingAllMessages = true }
                         )
                     }
                     TrainerSharedFilesSection(
@@ -83,6 +93,9 @@ struct EnhancedClientDetailView: View {
                     Button(action: { showingVideoCamera = true }) {
                         Label("Send Video Message", systemImage: "video.fill")
                     }
+                    Button(action: { showingVideoCallInvite = true }) {
+                        Label("Start Video Call", systemImage: "video.badge.plus")
+                    }
                     Button(action: { showingAllMessages = true }) {
                         Label("View All Messages", systemImage: "message.fill")
                     }
@@ -95,6 +108,7 @@ struct EnhancedClientDetailView: View {
                 }
             }
         }
+        // Async video message camera
         .sheet(isPresented: $showingVideoCamera) {
             VideoMessageCameraView(
                 viewModel:  videoMessageViewModel,
@@ -102,6 +116,7 @@ struct EnhancedClientDetailView: View {
                 clientId:   client.id
             )
         }
+        // All video messages
         .sheet(isPresented: $showingAllMessages) {
             NavigationView {
                 ClientVideoMessagesView(
@@ -111,6 +126,7 @@ struct EnhancedClientDetailView: View {
                 )
             }
         }
+        // Share file
         .sheet(isPresented: $showingShareFile) {
             NavigationView {
                 TrainerUploadFileView(
@@ -121,6 +137,31 @@ struct EnhancedClientDetailView: View {
                 )
             }
             .tint(.tmGold)
+        }
+        // Video call invite sheet
+        .sheet(isPresented: $showingVideoCallInvite) {
+            VideoCallInviteView(
+                channelName:      callChannel,
+                remotePersonName: client.name,
+                isTrainer:        true,
+                token:            nil,
+                onJoin: {
+                    showingVideoCallInvite = false
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        showingLiveCall = true
+                    }
+                },
+                onDecline: { showingVideoCallInvite = false }
+            )
+        }
+        // Live video call (full screen)
+        .fullScreenCover(isPresented: $showingLiveCall) {
+            AgoraVideoCallView(
+                channelName:      callChannel,
+                isTrainer:        true,
+                remotePersonName: client.name,
+                token:            nil
+            )
         }
     }
 }
@@ -174,6 +215,7 @@ struct QuickActionsSection: View {
     let onSendVideo:    () -> Void
     let onViewMessages: () -> Void
     var onShareFile:    (() -> Void)? = nil
+    let onStartCall:    () -> Void
     let unviewedCount:  Int
 
     var body: some View {
@@ -181,6 +223,7 @@ struct QuickActionsSection: View {
             Text("Quick Actions").font(.headline).foregroundColor(.white)
                 .frame(maxWidth: .infinity, alignment: .leading)
             HStack(spacing: 12) {
+                // Send Async Video Message
                 Button(action: onSendVideo) {
                     VStack(spacing: 8) {
                         ZStack {
@@ -190,6 +233,8 @@ struct QuickActionsSection: View {
                         Text("Send Video").font(.caption).fontWeight(.semibold).foregroundColor(.white)
                     }
                 }
+
+                // View Messages
                 Button(action: onViewMessages) {
                     VStack(spacing: 8) {
                         ZStack(alignment: .topTrailing) {
@@ -205,6 +250,19 @@ struct QuickActionsSection: View {
                         Text("Messages").font(.caption).fontWeight(.semibold).foregroundColor(.white)
                     }
                 }
+
+                // Live Video Call
+                Button(action: onStartCall) {
+                    VStack(spacing: 8) {
+                        ZStack {
+                            Circle().fill(Color.green.opacity(0.2)).frame(width: 60, height: 60)
+                            Image(systemName: "video.badge.plus").font(.title2).foregroundColor(.green)
+                        }
+                        Text("Video Call").font(.caption).fontWeight(.semibold).foregroundColor(.white)
+                    }
+                }
+
+                // Share File
                 if let onShareFile = onShareFile {
                     Button(action: onShareFile) {
                         VStack(spacing: 8) {
@@ -215,6 +273,7 @@ struct QuickActionsSection: View {
                         }
                     }
                 }
+
                 Spacer()
             }
         }
@@ -268,17 +327,22 @@ struct MessagePreviewCard: View {
                     RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.05))
                         .frame(width: 60, height: 60)
                     Image(systemName: "play.circle.fill").font(.title2).foregroundColor(.tmGold)
-                    if message.isNew {
-                        VStack { HStack { Spacer()
-                            Circle().fill(Color.red).frame(width: 10, height: 10)
-                        }; Spacer() }
+                    if !message.isViewed {
+                        VStack {
+                            HStack {
+                                Spacer()
+                                Circle().fill(Color.red).frame(width: 10, height: 10)
+                            }
+                            Spacer()
+                        }
                     }
                 }
                 VStack(alignment: .leading, spacing: 4) {
                     Text(message.title).font(.subheadline).fontWeight(.semibold)
                         .foregroundColor(.white).lineLimit(1)
                     HStack {
-                        Text(message.messageType.rawValue).font(.caption).foregroundColor(.tmGold)
+                        Text(message.messageType.displayName)
+                            .font(.caption).foregroundColor(.tmGold)
                         Text("•").foregroundColor(.white.opacity(0.5))
                         Text(message.timeAgo).font(.caption).foregroundColor(.white.opacity(0.5))
                     }
@@ -367,10 +431,10 @@ struct ActivitySection: View {
 
     private func statusColor(for status: String) -> Color {
         switch status {
-        case "Very Active": return .green
-        case "Active":      return .yellow
+        case "Very Active":    return .green
+        case "Active":         return .yellow
         case "Lightly Active": return .orange
-        default: return .red
+        default:               return .red
         }
     }
     private func timeAgo(_ date: Date) -> String {
@@ -643,10 +707,14 @@ struct TrainerClientCheckInSummary: View {
     @State private var showingAll = false
 
     private var clientCheckIns: [CheckInRow] {
-        store.checkIns.filter { $0.trainerId.uuidString == trainerId && $0.clientId.uuidString == clientId }
+        store.checkIns.filter {
+            $0.trainerId.uuidString == trainerId && $0.clientId.uuidString == clientId
+        }
     }
-    private var pending: [CheckInRow] { clientCheckIns.filter { ($0.notes ?? "").isEmpty } }
-    private var latest:  CheckInRow?  { clientCheckIns.first }
+    private var pending: [CheckInRow] {
+        clientCheckIns.filter { ($0.trainerFeedback ?? "").isEmpty }
+    }
+    private var latest: CheckInRow? { clientCheckIns.first }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -744,8 +812,8 @@ struct TrainerSingleClientCheckInsView: View {
             $0.trainerId.uuidString == trainerId && $0.clientId.uuidString == clientId
         }
         switch selectedFilter {
-        case .pending:  return all.filter { ($0.notes ?? "").isEmpty }
-        case .reviewed: return all.filter { !($0.notes ?? "").isEmpty }
+        case .pending:  return all.filter { ($0.trainerFeedback ?? "").isEmpty }
+        case .reviewed: return all.filter { !($0.trainerFeedback ?? "").isEmpty }
         case .all:      return all
         }
     }
@@ -765,7 +833,6 @@ struct TrainerSingleClientCheckInsView: View {
                     }
                 }
                 .background(Color.white.opacity(0.05))
-
                 if items.isEmpty {
                     VStack(spacing: 12) {
                         Image(systemName: "camera.viewfinder").font(.system(size: 44))
@@ -814,12 +881,11 @@ struct TrainerClientWorkoutSummary: View {
     private var allWorkouts: [WorkoutRow] {
         store.workouts.filter { $0.clientId.uuidString == clientId }
     }
-    private var pending: [WorkoutRow] { allWorkouts.filter { $0.status == "assigned" } }
-    private var latest:   WorkoutRow? { allWorkouts.first }
+    private var pending: [WorkoutRow]  { allWorkouts.filter { $0.status == "assigned" } }
+    private var latest:  WorkoutRow?   { allWorkouts.first }
     private var completionRate: Int {
         guard !allWorkouts.isEmpty else { return 0 }
-        let done = allWorkouts.filter { $0.status == "completed" }.count
-        return Int(Double(done) / Double(allWorkouts.count) * 100)
+        return Int(Double(allWorkouts.filter { $0.status == "completed" }.count) / Double(allWorkouts.count) * 100)
     }
 
     var body: some View {
@@ -891,8 +957,7 @@ struct TrainerClientWorkoutSummary: View {
                                 HStack(spacing: 6) {
                                     Text("\(w.exercises.count) exercises"); Text("·")
                                     Text("\(w.estimatedMins) min")
-                                }
-                                .font(.caption).foregroundColor(.white.opacity(0.4))
+                                }.font(.caption).foregroundColor(.white.opacity(0.4))
                             }
                             Spacer()
                             Text(w.status.capitalized).font(.system(size: 9, weight: .bold))
@@ -927,8 +992,7 @@ struct TrainerClientWorkoutSummary: View {
         VStack(spacing: 3) {
             Text(value).font(.system(size: 16, weight: .black)).foregroundColor(.tmGold)
             Text(label).font(.system(size: 9)).foregroundColor(.white.opacity(0.4))
-        }
-        .frame(maxWidth: .infinity)
+        }.frame(maxWidth: .infinity)
     }
     private func wDiffColor(_ d: String) -> Color {
         switch d { case "beginner": return .green; case "advanced": return .red; default: return .tmGold }

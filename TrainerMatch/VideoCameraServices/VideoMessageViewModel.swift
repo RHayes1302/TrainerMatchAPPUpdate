@@ -122,9 +122,9 @@ class VideoMessageViewModel: ObservableObject {
 
             try await saveMessageToDB(videoMessages[index])
 
-            NotificationManager.shared.notifyVideo(
-                to: message.clientId, role: .client,
-                from: message.trainerId, senderName: "Your Trainer"
+            PushNotificationManager.shared.sendVideoMessageNotification(
+                toClientId: message.clientId,
+                trainerName: "Your Trainer"
             )
 
             saveLocalMessages()

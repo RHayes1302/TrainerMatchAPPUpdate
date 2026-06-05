@@ -106,7 +106,6 @@ struct ClientWeightView: View {
                 .background(RoundedRectangle(cornerRadius: 16).fill(Color.white.opacity(0.04)))
             }
 
-            // Recent entries
             if !entries.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("RECENT").font(.system(size: 10, weight: .bold)).tracking(1.2).foregroundColor(.tmGold)
@@ -126,9 +125,7 @@ struct ClientWeightView: View {
             }
         }
         .onAppear { store.loadForClient(clientId) }
-        .sheet(isPresented: $showingLog) {
-            logWeightSheet
-        }
+        .sheet(isPresented: $showingLog) { logWeightSheet }
     }
 
     private var logWeightSheet: some View {
@@ -190,10 +187,10 @@ struct ClientWeightView: View {
         Task {
             try? await SBWeightStore.shared.log(entry)
             await MainActor.run {
-                isSaving = false
-                showingLog = false
-                weightText = ""
-                note = ""
+                isSaving    = false
+                showingLog  = false
+                weightText  = ""
+                note        = ""
             }
         }
     }
@@ -218,22 +215,46 @@ struct TrainerClientMealPlanSummary: View {
     let trainerId:  String
     let clientId:   String
     let clientName: String
-    @ObservedObject private var store = SBMealPlanStore.shared
-    @State private var showingPlans   = false
-    @State private var showingBuilder = false
+    @ObservedObject private var planStore = SBMealPlanStore.shared
+    @ObservedObject private var logStore  = NutritionLogRequestStore.shared
+    @State private var showingPlans       = false
+    @State private var showingBuilder     = false
+    @State private var showingLogViewer   = false
+    @State private var isSendingRequest   = false
+    @State private var requestSent        = false
+    @State private var logEntries: [MealLogEntry] = []
 
-    private var plans:  [MealPlanRow] { store.plans(forClient: clientId) }
-    private var active: MealPlanRow?  { store.activePlan(forClient: clientId) }
+    private var plans:  [MealPlanRow] { planStore.plans(forClient: clientId) }
+    private var active: MealPlanRow?  { planStore.activePlan(forClient: clientId) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 HStack(spacing: 6) {
                     Image(systemName: "fork.knife").foregroundColor(.tmGold).font(.caption)
-                    Text("NUTRITION").font(.system(size: 11, weight: .bold)).tracking(1.2).foregroundColor(.tmGold)
+                    Text("NUTRITION")
+                        .font(.system(size: 11, weight: .bold)).tracking(1.2).foregroundColor(.tmGold)
                 }
                 Spacer()
                 HStack(spacing: 10) {
+                    // Request 3-day nutrition log from client
+                    Button(action: sendLogRequest) {
+                        HStack(spacing: 4) {
+                            if isSendingRequest {
+                                ProgressView().scaleEffect(0.7).tint(.tmGold)
+                            } else {
+                                Image(systemName: requestSent
+                                      ? "checkmark.circle.fill"
+                                      : "doc.text.magnifyingglass")
+                                    .font(.caption)
+                                Text(requestSent ? "Requested" : "Request Log")
+                                    .font(.caption).fontWeight(.semibold)
+                            }
+                        }
+                        .foregroundColor(requestSent ? .green : .tmGold)
+                    }
+                    .disabled(isSendingRequest || requestSent)
+
                     Button(action: { showingBuilder = true }) {
                         HStack(spacing: 4) {
                             Image(systemName: "plus.circle.fill").font(.caption)
@@ -247,10 +268,39 @@ struct TrainerClientMealPlanSummary: View {
                 }
             }
 
+            // 3-day log entries if any exist
+            if !logEntries.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Text("RECENT MEAL LOG")
+                            .font(.system(size: 10, weight: .bold)).tracking(1.2).foregroundColor(.tmGold)
+                        Spacer()
+                        Button("See All") { showingLogViewer = true }
+                            .font(.caption).fontWeight(.semibold).foregroundColor(.tmGold)
+                    }
+                    ForEach(logEntries.prefix(3)) { entry in
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(entry.mealName)
+                                    .font(.system(size: 13, weight: .semibold)).foregroundColor(.white)
+                                Text(entry.mealType).font(.caption).foregroundColor(.tmGold)
+                            }
+                            Spacer()
+                            Text("\(entry.calories) cal")
+                                .font(.system(size: 13, weight: .bold)).foregroundColor(.tmGold)
+                        }
+                        .padding(10)
+                        .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.04)))
+                    }
+                }
+            }
+
+            // Meal plan section
             if plans.isEmpty {
                 Button(action: { showingBuilder = true }) {
                     HStack(spacing: 12) {
-                        Image(systemName: "fork.knife").font(.title3).foregroundColor(.tmGold.opacity(0.4))
+                        Image(systemName: "fork.knife")
+                            .font(.title3).foregroundColor(.tmGold.opacity(0.4))
                         VStack(alignment: .leading, spacing: 2) {
                             Text("No meal plan assigned")
                                 .font(.subheadline).fontWeight(.semibold).foregroundColor(.white.opacity(0.5))
@@ -262,18 +312,21 @@ struct TrainerClientMealPlanSummary: View {
                     }
                     .padding(14)
                     .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.03))
-                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.tmGold.opacity(0.15), lineWidth: 1)))
+                        .overlay(RoundedRectangle(cornerRadius: 12)
+                            .stroke(Color.tmGold.opacity(0.15), lineWidth: 1)))
                 }
                 .buttonStyle(.plain)
             } else if let p = active ?? plans.first {
                 Button(action: { showingPlans = true }) {
                     HStack(spacing: 12) {
                         ZStack {
-                            RoundedRectangle(cornerRadius: 8).fill(Color.tmGold.opacity(0.15)).frame(width: 38, height: 38)
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color.tmGold.opacity(0.15)).frame(width: 38, height: 38)
                             Image(systemName: "fork.knife").font(.system(size: 14)).foregroundColor(.tmGold)
                         }
                         VStack(alignment: .leading, spacing: 3) {
-                            Text(p.title).font(.system(size: 13, weight: .semibold)).foregroundColor(.white)
+                            Text(p.title)
+                                .font(.system(size: 13, weight: .semibold)).foregroundColor(.white)
                             Text("\(p.dailyCalories) cal/day · \(p.meals.count) meals")
                                 .font(.caption).foregroundColor(.white.opacity(0.4))
                         }
@@ -284,10 +337,14 @@ struct TrainerClientMealPlanSummary: View {
                                 .background(Capsule().fill(Color.tmGold))
                         }
                     }
-                    .padding(12).background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.04)))
+                    .padding(12)
+                    .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.04)))
                 }
                 .buttonStyle(.plain)
             }
+        }
+        .onAppear {
+            Task { logEntries = await logStore.fetchLogEntries(forClient: clientId) }
         }
         .sheet(isPresented: $showingPlans) {
             NavigationView {
@@ -301,58 +358,270 @@ struct TrainerClientMealPlanSummary: View {
             }
             .tint(.tmGold).navigationViewStyle(StackNavigationViewStyle())
         }
+        .sheet(isPresented: $showingLogViewer) {
+            NavigationView {
+                TrainerMealLogViewer(clientName: clientName, entries: logEntries)
+            }
+            .tint(.tmGold).navigationViewStyle(StackNavigationViewStyle())
+        }
+    }
+
+    private func sendLogRequest() {
+        isSendingRequest = true
+        print("🔔 sendLogRequest — trainerId: \(trainerId), clientId: \(clientId)")
+        Task {
+            let oneSignalId = await NutritionLogRequestStore.fetchClientOneSignalId(clientId: clientId)
+            let trainerName = await NutritionLogRequestStore.fetchTrainerName(trainerId: trainerId)
+            print("🔔 oneSignalId: '\(oneSignalId)', trainerName: '\(trainerName)'")
+            do {
+                try await logStore.requestLog(
+                    clientId:          clientId,
+                    clientOneSignalId: oneSignalId,
+                    trainerName:       trainerName
+                )
+                print("✅ Nutrition log request sent successfully")
+            } catch {
+                print("❌ Nutrition log request failed: \(error)")
+            }
+            await MainActor.run {
+                isSendingRequest = false
+                requestSent      = true
+            }
+        }
     }
 }
 
+// MARK: - Trainer Meal Log Viewer
+
+struct TrainerMealLogViewer: View {
+    let clientName: String
+    let entries:    [MealLogEntry]
+    @Environment(\.dismiss) var dismiss
+
+    private var grouped: [(String, [MealLogEntry])] {
+        let fmt = DateFormatter()
+        fmt.dateStyle = .medium
+        let dict = Dictionary(grouping: entries) { entry -> String in
+            fmt.string(from: entry.loggedAt ?? Date())
+        }
+        return dict.sorted { $0.key > $1.key }
+    }
+
+    private var totalCalories: Int    { entries.reduce(0) { $0 + $1.calories } }
+    private var totalProtein:  Double { entries.reduce(0.0) { $0 + $1.proteinG } }
+    private var dayCount:      Int    { max(1, grouped.count) }
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    if entries.isEmpty {
+                        VStack(spacing: 14) {
+                            Image(systemName: "fork.knife")
+                                .font(.system(size: 48)).foregroundColor(.white.opacity(0.1)).padding(.top, 60)
+                            Text("\(clientName) hasn't logged any meals yet.")
+                                .font(.subheadline).foregroundColor(.white.opacity(0.4))
+                                .multilineTextAlignment(.center)
+                        }
+                        .frame(maxWidth: .infinity)
+                    } else {
+                        // 3-day summary strip
+                        let avgCal     = totalCalories / dayCount
+                        let avgProtein = String(format: "%.0fg", totalProtein / Double(dayCount))
+                        let totalMeals = entries.count
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("3-DAY SUMMARY")
+                                .font(.system(size: 10, weight: .bold)).tracking(1.2).foregroundColor(.tmGold)
+                            HStack(spacing: 0) {
+                                summaryCell("\(avgCal)", "avg cal/day", .tmGold)
+                                Divider().background(Color.white.opacity(0.08)).frame(height: 36)
+                                summaryCell(avgProtein, "avg protein", .red)
+                                Divider().background(Color.white.opacity(0.08)).frame(height: 36)
+                                summaryCell("\(totalMeals)", "total meals", .white)
+                            }
+                            .padding(.vertical, 12)
+                            .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.05)))
+                        }
+
+                        // Entries grouped by day
+                        ForEach(grouped, id: \.0) { day, dayEntries in
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(day)
+                                    .font(.system(size: 12, weight: .bold)).foregroundColor(.tmGold)
+
+                                ForEach(dayEntries) { entry in
+                                    VStack(alignment: .leading, spacing: 6) {
+                                        HStack {
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text(entry.mealName)
+                                                    .font(.system(size: 13, weight: .semibold))
+                                                    .foregroundColor(.white)
+                                                Text(entry.mealType)
+                                                    .font(.caption).foregroundColor(.tmGold)
+                                            }
+                                            Spacer()
+                                            VStack(alignment: .trailing, spacing: 2) {
+                                                Text("\(entry.calories) cal")
+                                                    .font(.system(size: 13, weight: .bold))
+                                                    .foregroundColor(.tmGold)
+                                                Text(String(format: "P:%.0fg  C:%.0fg  F:%.0fg",
+                                                            entry.proteinG, entry.carbsG, entry.fatG))
+                                                    .font(.caption2).foregroundColor(.white.opacity(0.35))
+                                            }
+                                        }
+                                        if !entry.rawText.isEmpty {
+                                            Text("\u{201C}\(entry.rawText)\u{201D}")
+                                                .font(.caption2).foregroundColor(.white.opacity(0.3)).italic()
+                                        }
+                                    }
+                                    .padding(12)
+                                    .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.04)))
+                                }
+
+                                let dayTotal = dayEntries.reduce(0) { $0 + $1.calories }
+                                HStack {
+                                    Spacer()
+                                    Text("Day total: \(dayTotal) cal")
+                                        .font(.system(size: 11, weight: .bold))
+                                        .foregroundColor(.tmGold.opacity(0.7))
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(20)
+            }
+        }
+        .navigationTitle("\(clientName)'s Meal Log")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(Color.black, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbar {
+            ToolbarItem(placement: .navigationBarLeading) {
+                Button(action: { dismiss() }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left").fontWeight(.semibold)
+                        Text("Back")
+                    }.foregroundColor(.tmGold)
+                }
+            }
+        }
+    }
+
+    private func summaryCell(_ value: String, _ label: String, _ color: Color) -> some View {
+        VStack(spacing: 3) {
+            Text(value).font(.system(size: 16, weight: .black)).foregroundColor(color)
+            Text(label).font(.system(size: 9)).foregroundColor(.white.opacity(0.35))
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
 // MARK: - ClientNutritionSection
 
 struct ClientNutritionSection: View {
-    let clientId:  String
+    let clientId:   String
     let clientName: String
-    let trainerId: String
-    @ObservedObject private var store = SBMealPlanStore.shared
+    let trainerId:  String
+    @ObservedObject private var planStore = SBMealPlanStore.shared
+    @ObservedObject private var logStore  = NutritionLogRequestStore.shared
+    @State private var showingVoiceLog    = false
 
-    private var plans:  [MealPlanRow] { store.plans(forClient: clientId) }
-    private var active: MealPlanRow?  { store.activePlan(forClient: clientId) }
+    private var plans:  [MealPlanRow] { planStore.plans(forClient: clientId) }
+    private var active: MealPlanRow?  { planStore.activePlan(forClient: clientId) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 20) {
             Text("Nutrition").font(.title2).fontWeight(.bold).foregroundColor(.white)
 
-            if let p = active ?? plans.first {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text(p.title).font(.system(size: 15, weight: .bold)).foregroundColor(.white)
-                    HStack(spacing: 0) {
-                        macroCell("\(p.dailyCalories)", "kcal",   .tmGold)
-                        macroCell(String(format: "%.0fg", p.proteinG), "protein", .red)
-                        macroCell(String(format: "%.0fg", p.carbsG),   "carbs",   .blue)
-                        macroCell(String(format: "%.0fg", p.fatG),     "fats",    .yellow)
-                    }
-                    .padding(.vertical, 12)
-                    .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.04)))
-
-                    ForEach(p.meals.prefix(3)) { meal in
-                        HStack {
-                            Text(meal.mealType).font(.caption).foregroundColor(.tmGold).frame(width: 80, alignment: .leading)
-                            Text(meal.name).font(.subheadline).foregroundColor(.white)
-                            Spacer()
-                            Text("\(meal.calories) cal").font(.caption).foregroundColor(.white.opacity(0.5))
+            // Active log request banner — only shown when trainer has requested
+            if let request = logStore.activeRequest, !request.isExpired {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "fork.knife.circle.fill")
+                            .font(.title2).foregroundColor(.tmGold)
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("\(request.trainerName) requested a nutrition log")
+                                .font(.system(size: 14, weight: .bold)).foregroundColor(.white)
+                            Text("\(request.daysRemaining) day\(request.daysRemaining == 1 ? "" : "s") remaining")
+                                .font(.caption).foregroundColor(.tmGold)
                         }
-                        .padding(10).background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.04)))
+                        Spacer()
+                    }
+                    Text("Log your meals for the next 3 days so your trainer can review your eating habits.")
+                        .font(.caption).foregroundColor(.white.opacity(0.6))
+                    Button(action: { showingVoiceLog = true }) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "mic.fill")
+                            Text("LOG A MEAL NOW")
+                                .font(.system(size: 14, weight: .heavy)).tracking(0.5)
+                        }
+                        .foregroundColor(.black).frame(maxWidth: .infinity).frame(height: 48)
+                        .background(RoundedRectangle(cornerRadius: 24).fill(Color.tmGold))
                     }
                 }
+                .padding(16)
+                .background(RoundedRectangle(cornerRadius: 16).fill(Color.tmGold.opacity(0.08))
+                    .overlay(RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color.tmGold.opacity(0.3), lineWidth: 1)))
+
+                // Show what they've logged so far during the request window
+                DailyNutritionSummaryView(clientId: clientId)
+
             } else {
-                VStack(spacing: 12) {
-                    Image(systemName: "fork.knife").font(.system(size: 40)).foregroundColor(.tmGold.opacity(0.2))
-                    Text("No active meal plan").font(.subheadline).foregroundColor(.white.opacity(0.4))
-                    Text("Your trainer hasn't assigned a nutrition plan yet.")
-                        .font(.caption).foregroundColor(.white.opacity(0.3)).multilineTextAlignment(.center)
+                // No active request — show trainer-assigned meal plan as normal
+                if let plan = active ?? plans.first {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("MEAL PLAN")
+                            .font(.system(size: 10, weight: .bold)).tracking(1.2).foregroundColor(.tmGold)
+                        Text(plan.title)
+                            .font(.system(size: 15, weight: .bold)).foregroundColor(.white)
+                        HStack(spacing: 0) {
+                            macroCell("\(plan.dailyCalories)", "kcal",   .tmGold)
+                            macroCell(String(format: "%.0fg", plan.proteinG), "protein", .red)
+                            macroCell(String(format: "%.0fg", plan.carbsG),   "carbs",   .blue)
+                            macroCell(String(format: "%.0fg", plan.fatG),     "fats",    .yellow)
+                        }
+                        .padding(.vertical, 12)
+                        .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.04)))
+
+                        ForEach(plan.meals.prefix(3)) { meal in
+                            HStack {
+                                Text(meal.mealType)
+                                    .font(.caption).foregroundColor(.tmGold).frame(width: 80, alignment: .leading)
+                                Text(meal.name).font(.subheadline).foregroundColor(.white)
+                                Spacer()
+                                Text("\(meal.calories) cal")
+                                    .font(.caption).foregroundColor(.white.opacity(0.5))
+                            }
+                            .padding(10)
+                            .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.04)))
+                        }
+                    }
+                } else {
+                    VStack(spacing: 12) {
+                        Image(systemName: "fork.knife")
+                            .font(.system(size: 40)).foregroundColor(.tmGold.opacity(0.2))
+                        Text("No active meal plan")
+                            .font(.subheadline).foregroundColor(.white.opacity(0.4))
+                        Text("Your trainer hasn't assigned a nutrition plan yet.")
+                            .font(.caption).foregroundColor(.white.opacity(0.3)).multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity).padding(.vertical, 24)
+                    .background(RoundedRectangle(cornerRadius: 16).fill(Color.white.opacity(0.03)))
                 }
-                .frame(maxWidth: .infinity).padding(.vertical, 24)
-                .background(RoundedRectangle(cornerRadius: 16).fill(Color.white.opacity(0.03)))
             }
         }
-        .onAppear { store.loadForClient(clientId) }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .onAppear {
+            planStore.loadForClient(clientId)
+            Task { await logStore.fetchActiveRequest(forClient: clientId) }
+        }
+        .sheet(isPresented: $showingVoiceLog) {
+            VoiceMealLoggerView(clientId: clientId)
+        }
     }
 
     private func macroCell(_ value: String, _ label: String, _ color: Color) -> some View {
@@ -377,7 +646,8 @@ struct TrainerAllCheckInsForClientView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 6) {
                 Image(systemName: "camera.fill").font(.caption).foregroundColor(.tmGold)
-                Text("CHECK-INS").font(.system(size: 11, weight: .bold)).tracking(1.2).foregroundColor(.tmGold)
+                Text("CHECK-INS")
+                    .font(.system(size: 11, weight: .bold)).tracking(1.2).foregroundColor(.tmGold)
                 Spacer()
                 Text("\(checkIns.count) total").font(.caption).foregroundColor(.white.opacity(0.4))
             }
@@ -388,12 +658,12 @@ struct TrainerAllCheckInsForClientView: View {
                     Text("No check-ins submitted yet")
                         .font(.caption).foregroundColor(.white.opacity(0.35))
                 }
-                .padding(12).background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.03)))
+                .padding(12)
+                .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.03)))
             } else {
                 ForEach(checkIns.prefix(5)) { ci in
                     HStack(spacing: 12) {
-                        // Photo thumbnail
-                        if let url = ci.frontURL,
+                        if let url  = ci.frontURL,
                            let data = try? Data(contentsOf: url),
                            let img  = UIImage(data: data) {
                             Image(uiImage: img).resizable().scaledToFill()
@@ -444,14 +714,16 @@ struct ClientCheckInHistoryView: View {
                         ForEach(items) { ci in
                             HStack {
                                 VStack(alignment: .leading, spacing: 4) {
-                                    Text(ci.formattedDate).font(.system(size: 14, weight: .semibold)).foregroundColor(.white)
+                                    Text(ci.formattedDate)
+                                        .font(.system(size: 14, weight: .semibold)).foregroundColor(.white)
                                     Text(ci.formattedWeight).font(.caption).foregroundColor(.tmGold)
                                     if !ci.notes.isEmpty {
                                         Text(ci.notes).font(.caption2).foregroundColor(.white.opacity(0.4))
                                     }
                                 }
                                 Spacer()
-                                Text("\(ci.photoUrls.count) photos").font(.caption2).foregroundColor(.white.opacity(0.35))
+                                Text("\(ci.photoUrls.count) photos")
+                                    .font(.caption2).foregroundColor(.white.opacity(0.35))
                             }
                             .padding(14)
                             .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.05)))
@@ -462,7 +734,8 @@ struct ClientCheckInHistoryView: View {
             }
         }
         .navigationTitle("My Check-Ins").navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(Color.black, for: .navigationBar).toolbarBackground(.visible, for: .navigationBar)
+        .toolbarBackground(Color.black, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
@@ -487,19 +760,19 @@ struct ClientSubmitCheckInView: View {
     @Environment(\.dismiss) var dismiss
     @ObservedObject private var store = SBCheckInStore.shared
 
-    @State private var frontItem:   PhotosPickerItem?
-    @State private var rearItem:    PhotosPickerItem?
-    @State private var rightItem:   PhotosPickerItem?
-    @State private var leftItem:    PhotosPickerItem?
-    @State private var frontImage:  UIImage?
-    @State private var rearImage:   UIImage?
-    @State private var rightImage:  UIImage?
-    @State private var leftImage:   UIImage?
-    @State private var weightText   = ""
-    @State private var unit         = "lbs"
-    @State private var notes        = ""
-    @State private var isSaving     = false
-    @State private var showSuccess  = false
+    @State private var frontItem:  PhotosPickerItem?
+    @State private var rearItem:   PhotosPickerItem?
+    @State private var rightItem:  PhotosPickerItem?
+    @State private var leftItem:   PhotosPickerItem?
+    @State private var frontImage: UIImage?
+    @State private var rearImage:  UIImage?
+    @State private var rightImage: UIImage?
+    @State private var leftImage:  UIImage?
+    @State private var weightText  = ""
+    @State private var unit        = "lbs"
+    @State private var notes       = ""
+    @State private var isSaving    = false
+    @State private var showSuccess = false
 
     private var canSubmit: Bool { Double(weightText) != nil }
 
@@ -508,8 +781,6 @@ struct ClientSubmitCheckInView: View {
             Color.black.ignoresSafeArea()
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 24) {
-
-                    // Photos grid
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
                         photoCell("Front", item: $frontItem, image: $frontImage)
                         photoCell("Rear",  item: $rearItem,  image: $rearImage)
@@ -517,15 +788,15 @@ struct ClientSubmitCheckInView: View {
                         photoCell("Left",  item: $leftItem,  image: $leftImage)
                     }
 
-                    // Weight
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("MORNING WEIGHT").font(.system(size: 10, weight: .bold)).tracking(1.2).foregroundColor(.tmGold)
+                        Text("MORNING WEIGHT")
+                            .font(.system(size: 10, weight: .bold)).tracking(1.2).foregroundColor(.tmGold)
                         HStack {
                             TextField("0.0", text: $weightText).keyboardType(.decimalPad)
                                 .font(.system(size: 32, weight: .black)).foregroundColor(.tmGold)
                             Spacer()
                             HStack(spacing: 0) {
-                                ForEach(["lbs","kg"], id: \.self) { u in
+                                ForEach(["lbs", "kg"], id: \.self) { u in
                                     Button(action: { unit = u }) {
                                         Text(u).font(.system(size: 12, weight: .bold))
                                             .foregroundColor(unit == u ? .black : .white.opacity(0.5))
@@ -537,24 +808,24 @@ struct ClientSubmitCheckInView: View {
                             .background(RoundedRectangle(cornerRadius: 18).fill(Color.white.opacity(0.08)))
                             .clipShape(RoundedRectangle(cornerRadius: 18))
                         }
-                        .padding(14).background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
+                        .padding(14)
+                        .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
                     }
 
-                    // Notes
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("NOTE (OPTIONAL)").font(.system(size: 10, weight: .bold)).tracking(1.2).foregroundColor(.tmGold)
+                        Text("NOTE (OPTIONAL)")
+                            .font(.system(size: 10, weight: .bold)).tracking(1.2).foregroundColor(.tmGold)
                         TextField("How are you feeling?", text: $notes, axis: .vertical)
                             .foregroundColor(.white).lineLimit(3...5).padding(14)
                             .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
                     }
 
-                    // Submit
                     Button(action: submit) {
                         HStack(spacing: 8) {
-                            if isSaving { ProgressView().tint(.black) }
-                            else {
+                            if isSaving { ProgressView().tint(.black) } else {
                                 Image(systemName: "paperplane.fill")
-                                Text("SUBMIT CHECK-IN").font(.system(size: 15, weight: .heavy)).tracking(0.5)
+                                Text("SUBMIT CHECK-IN")
+                                    .font(.system(size: 15, weight: .heavy)).tracking(0.5)
                             }
                         }
                         .foregroundColor(.black).frame(maxWidth: .infinity).frame(height: 54)
@@ -567,7 +838,8 @@ struct ClientSubmitCheckInView: View {
             }
         }
         .navigationTitle("Weekly Check-In").navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(Color.black, for: .navigationBar).toolbarBackground(.visible, for: .navigationBar)
+        .toolbarBackground(Color.black, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .navigationBarLeading) {
@@ -581,12 +853,16 @@ struct ClientSubmitCheckInView: View {
         }
     }
 
-    private func photoCell(_ label: String, item: Binding<PhotosPickerItem?>, image: Binding<UIImage?>) -> some View {
+    private func photoCell(_ label: String,
+                           item: Binding<PhotosPickerItem?>,
+                           image: Binding<UIImage?>) -> some View {
         PhotosPicker(selection: item, matching: .images) {
             ZStack {
                 RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.05))
                     .overlay(RoundedRectangle(cornerRadius: 14)
-                        .stroke(image.wrappedValue != nil ? Color.tmGold.opacity(0.5) : Color.white.opacity(0.1), lineWidth: 1))
+                        .stroke(image.wrappedValue != nil
+                                ? Color.tmGold.opacity(0.5)
+                                : Color.white.opacity(0.1), lineWidth: 1))
                     .frame(height: 140)
                 if let img = image.wrappedValue {
                     Image(uiImage: img).resizable().scaledToFill()
@@ -609,11 +885,11 @@ struct ClientSubmitCheckInView: View {
     }
 
     private func submit() {
-        guard let w = Double(weightText), let clientUUID = UUID(uuidString: clientId),
+        guard let w           = Double(weightText),
+              let clientUUID  = UUID(uuidString: clientId),
               let trainerUUID = UUID(uuidString: trainerId) else { return }
         isSaving = true
 
-        // Collect photo data
         var photoData: [Data] = []
         for img in [frontImage, rearImage, rightImage, leftImage].compactMap({ $0 }) {
             if let d = img.jpegData(compressionQuality: 0.7) { photoData.append(d) }
@@ -625,7 +901,6 @@ struct ClientSubmitCheckInView: View {
             energyLevel: nil, sleepHours: nil, waterOz: nil,
             checkedInAt: Date(), createdAt: Date()
         )
-
         Task {
             try? await SBCheckInStore.shared.submit(row, photos: photoData)
             await MainActor.run { isSaving = false; showSuccess = true }

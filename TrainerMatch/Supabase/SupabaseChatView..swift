@@ -58,8 +58,6 @@ struct SupabaseChatView: View {
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
         .task {
-            // ✅ Fetch messages first, then start realtime in background
-            // UI is never blocked — loading spinner shows while fetching
             do {
                 try await store.fetchMessages(trainerId: trainerId, clientId: clientId)
                 print("✅ fetchMessages succeeded — \(store.messages.count) messages")
@@ -179,6 +177,47 @@ struct SupabaseChatView: View {
             do {
                 try await store.send(message)
                 print("✅ Message sent OK")
+
+                // Resolve the recipient's auth_id — not their row id
+                let recipientAuthId: String
+
+                if currentUserId == trainerId {
+                    // Trainer is sending → look up client's auth_id
+                    if let client = try? await supabase
+                        .from("clients")
+                        .select("auth_id")
+                        .eq("id", value: clientId)
+                        .single()
+                        .execute()
+                        .value as ClientAuthRow {
+                        recipientAuthId = client.authId
+                    } else {
+                        print("❌ Could not resolve client auth_id")
+                        return
+                    }
+                } else {
+                    // Client is sending → look up trainer's auth_id
+                    if let trainer = try? await supabase
+                        .from("trainers")
+                        .select("auth_id")
+                        .eq("id", value: trainerId)
+                        .single()
+                        .execute()
+                        .value as TrainerAuthRow {
+                        recipientAuthId = trainer.authId
+                    } else {
+                        print("❌ Could not resolve trainer auth_id")
+                        return
+                    }
+                }
+
+                print("📬 Resolved recipient auth_id: \(recipientAuthId)")
+                PushNotificationManager.shared.sendMessageNotification(
+                    toUserId:   recipientAuthId,
+                    senderName: currentUserName,
+                    preview:    text
+                )
+
             } catch {
                 print("❌ Send FAILED: \(error)")
                 await MainActor.run {
@@ -187,6 +226,22 @@ struct SupabaseChatView: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - Auth ID lookup helpers
+
+private struct TrainerAuthRow: Decodable {
+    let authId: String
+    enum CodingKeys: String, CodingKey {
+        case authId = "auth_id"
+    }
+}
+
+private struct ClientAuthRow: Decodable {
+    let authId: String
+    enum CodingKeys: String, CodingKey {
+        case authId = "auth_id"
     }
 }
 
