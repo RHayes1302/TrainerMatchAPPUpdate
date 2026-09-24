@@ -19,6 +19,7 @@ struct SupabaseLoginView: View {
     @State private var showingForgotPassword = false
     @State private var nonce: String         = ""
     @StateObject private var appSettings     = AppSettingsStore.shared
+    @State private var showingAppleSetup     = false
 
     var body: some View {
         ZStack {
@@ -236,12 +237,21 @@ struct SupabaseLoginView: View {
             isLoading = true
             Task {
                 do {
-                    let _ = try await SupabaseAuthManager.shared.signInWithApple(
+                    let needsSetup = try await SupabaseAuthManager.shared.signInWithApple(
                         idToken: token, nonce: nonce,
                         role: isTrainerLogin ? .trainer : .client,
                         firstName: firstName, lastName: lastName
                     )
-                    await MainActor.run { isLoading = false; dismiss() }
+                    await MainActor.run {
+                        isLoading = false
+                        if needsSetup {
+                            // New user — show profile setup sheet, don't dismiss login yet
+                            showingAppleSetup = true
+                        } else {
+                            // Existing user — dismiss login, AppEntryView takes over
+                            dismiss()
+                        }
+                    }
                 } catch {
                     await MainActor.run {
                         errorMessage = "Apple Sign In failed: \(error.localizedDescription)"

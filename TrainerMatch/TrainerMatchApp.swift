@@ -1,15 +1,9 @@
-//
-//  TrainerMatchApp.swift
-//  TrainerMatch
-//
-
 import SwiftUI
 
 @main
 struct TrainerMatchApp: App {
     init() {
         PushNotificationManager.shared.initialize()
-        // ✅ Assignment 2: Start memory warning observer to clear image cache under pressure
         _ = MemoryWarningObserver.shared
     }
     var body: some Scene {
@@ -22,8 +16,6 @@ struct TrainerMatchApp: App {
 struct AppEntryView: View {
     @ObservedObject private var auth = SupabaseAuthManager.shared
     @AppStorage("tm_hasAcceptedTerms") private var hasAcceptedTerms = false
-
-    // Deep link navigation state
     @State private var navigateToPending = false
 
     var body: some View {
@@ -37,65 +29,29 @@ struct AppEntryView: View {
             } else if auth.isAuthenticated,
                       auth.currentUserRole == .trainer,
                       let trainer = auth.currentTrainer {
-
-                NavigationView {
-                    ZStack {
-                        TrainerProfileMySpaceView(trainer: trainer.toLocalTrainerProfile())
-                            .environmentObject(auth)
-                            .environmentObject(AuthManager.shared)
-
-                        NavigationLink(
-                            destination: TrainerPendingRequestsView(
-                                trainerId:   trainer.id.uuidString,
-                                trainerName: trainer.businessName ?? trainer.fullName,
-                                authId:      trainer.authId?.uuidString ?? trainer.id.uuidString
-                            ),
-                            isActive: $navigateToPending
-                        ) { EmptyView() }
+                // ✅ Trainer bottom nav
+                TrainerMainTabView(trainer: trainer)
+                    .environmentObject(auth)
+                    .environmentObject(AuthManager.shared)
+                    .task {
+                        await GymAdManager.shared.fetchActiveAds()
+                        SBConnectionStore.shared.loadForTrainer(trainer.id.uuidString)
                     }
-                }
-                .navigationViewStyle(StackNavigationViewStyle())
-                .tint(.tmGold)
-                .task {
-                    await GymAdManager.shared.fetchActiveAds()
-                    PushNotificationManager.shared.loginUser(
-                        userId: trainer.authId?.uuidString ?? trainer.id.uuidString
-                    )
-                    SBConnectionStore.shared.loadForTrainer(trainer.id.uuidString)
-                }
-                .onReceive(
-                    NotificationCenter.default.publisher(for: .tmPushNotificationTapped)
-                ) { note in
-                    let action = note.userInfo?["action"] as? String ?? ""
-                    if action == "pending_requests" {
-                        navigateToPending = true
-                    }
-                }
 
             } else if auth.isAuthenticated,
                       auth.currentUserRole == .client,
                       let client = auth.currentClient {
-
-                NavigationView {
-                    ClientProfileMySpaceView(client: client.toClientProfile())
-                        .environmentObject(auth)
-                        .environmentObject(AuthManager.shared)
-                }
-                .navigationViewStyle(StackNavigationViewStyle())
-                .tint(.tmGold)
-                .task {
-                    await GymAdManager.shared.fetchActiveAds()
-                    PushNotificationManager.shared.loginUser(
-                        userId: client.authId?.uuidString ?? client.id.uuidString
-                    )
-                    SBConnectionStore.shared.loadForClient(client.id.uuidString)
-                }
-                .onReceive(
-                    NotificationCenter.default.publisher(for: .tmPushNotificationTapped)
-                ) { note in
-                    let action = note.userInfo?["action"] as? String ?? ""
-                    if action == "parq_prompt" { }
-                }
+                // ✅ Client bottom nav
+                ClientMainTabView(client: client)
+                    .environmentObject(auth)
+                    .environmentObject(AuthManager.shared)
+                    .task {
+                        await GymAdManager.shared.fetchActiveAds()
+                        PushNotificationManager.shared.loginUser(
+                            userId: client.authId?.uuidString ?? client.id.uuidString
+                        )
+                        SBConnectionStore.shared.loadForClient(client.id.uuidString)
+                    }
 
             } else if auth.isAuthenticated, auth.pendingAppleAuthId != nil {
                 SupabaseAppleSetupView(role: auth.pendingAppleRole)

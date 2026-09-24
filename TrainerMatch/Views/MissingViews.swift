@@ -178,19 +178,26 @@ struct ClientWeightView: View {
     }
 
     private func saveWeight() {
-        guard let w = Double(weightText), let uid = UUID(uuidString: clientId) else { return }
+        guard let w = Double(weightText) else { return }
+        // Handle both auth_id and row_id
+        guard let uid = UUID(uuidString: clientId) else { return }
         isSaving = true
         let entry = SBWeightEntryRow(
             id: UUID(), clientId: uid, trainerId: nil,
             weight: w, unit: unit, note: note, loggedAt: Date()
         )
         Task {
-            try? await SBWeightStore.shared.log(entry)
-            await MainActor.run {
-                isSaving    = false
-                showingLog  = false
-                weightText  = ""
-                note        = ""
+            do {
+                try await SBWeightStore.shared.log(entry)
+                await MainActor.run {
+                    isSaving   = false
+                    showingLog = false
+                    weightText = ""
+                    note       = ""
+                }
+            } catch {
+                print("❌ Weight save error: \(error)")
+                await MainActor.run { isSaving = false }
             }
         }
     }
@@ -220,12 +227,16 @@ struct TrainerClientMealPlanSummary: View {
     @State private var showingPlans       = false
     @State private var showingBuilder     = false
     @State private var showingLogViewer   = false
+    @State private var showingTemplates   = false
     @State private var isSendingRequest   = false
     @State private var requestSent        = false
     @State private var logEntries: [MealLogEntry] = []
+    @State private var selectedPlan: MealPlanRow? = nil
 
-    private var plans:  [MealPlanRow] { planStore.plans(forClient: clientId) }
-    private var active: MealPlanRow?  { planStore.activePlan(forClient: clientId) }
+    private var plans: [MealPlanRow] {
+        planStore.mealPlans.filter { $0.clientId.uuidString.uppercased() == clientId.uppercased() }
+    }
+    private var active: MealPlanRow? { plans.first(where: { $0.isActive }) ?? plans.first }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -237,18 +248,13 @@ struct TrainerClientMealPlanSummary: View {
                 }
                 Spacer()
                 HStack(spacing: 10) {
-                    // Request 3-day nutrition log from client
                     Button(action: sendLogRequest) {
                         HStack(spacing: 4) {
                             if isSendingRequest {
                                 ProgressView().scaleEffect(0.7).tint(.tmGold)
                             } else {
-                                Image(systemName: requestSent
-                                      ? "checkmark.circle.fill"
-                                      : "doc.text.magnifyingglass")
-                                    .font(.caption)
-                                Text(requestSent ? "Requested" : "Request Log")
-                                    .font(.caption).fontWeight(.semibold)
+                                Image(systemName: requestSent ? "checkmark.circle.fill" : "doc.text.magnifyingglass").font(.caption)
+                                Text(requestSent ? "Requested" : "Request Log").font(.caption).fontWeight(.semibold)
                             }
                         }
                         .foregroundColor(requestSent ? .green : .tmGold)
@@ -261,6 +267,12 @@ struct TrainerClientMealPlanSummary: View {
                             Text("Assign").font(.caption).fontWeight(.semibold)
                         }.foregroundColor(.tmGold)
                     }
+                    Button(action: { showingTemplates = true }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "square.and.arrow.down").font(.caption)
+                            Text("Templates").font(.caption).fontWeight(.semibold)
+                        }.foregroundColor(.tmGold)
+                    }
                     if !plans.isEmpty {
                         Button("View All") { showingPlans = true }
                             .font(.caption).fontWeight(.semibold).foregroundColor(.tmGold)
@@ -268,125 +280,93 @@ struct TrainerClientMealPlanSummary: View {
                 }
             }
 
-            // 3-day log entries if any exist
             if !logEntries.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
-                        Text("RECENT MEAL LOG")
-                            .font(.system(size: 10, weight: .bold)).tracking(1.2).foregroundColor(.tmGold)
+                        Text("RECENT MEAL LOG").font(.system(size: 10, weight: .bold)).tracking(1.2).foregroundColor(.tmGold)
                         Spacer()
-                        Button("See All") { showingLogViewer = true }
-                            .font(.caption).fontWeight(.semibold).foregroundColor(.tmGold)
+                        Button("See All") { showingLogViewer = true }.font(.caption).fontWeight(.semibold).foregroundColor(.tmGold)
                     }
                     ForEach(logEntries.prefix(3)) { entry in
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(entry.mealName)
-                                    .font(.system(size: 13, weight: .semibold)).foregroundColor(.white)
+                                Text(entry.mealName).font(.system(size: 13, weight: .semibold)).foregroundColor(.white)
                                 Text(entry.mealType).font(.caption).foregroundColor(.tmGold)
                             }
                             Spacer()
-                            Text("\(entry.calories) cal")
-                                .font(.system(size: 13, weight: .bold)).foregroundColor(.tmGold)
+                            Text("\(entry.calories) cal").font(.system(size: 13, weight: .bold)).foregroundColor(.tmGold)
                         }
-                        .padding(10)
-                        .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.04)))
+                        .padding(10).background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.04)))
                     }
                 }
             }
 
-            // Meal plan section
             if plans.isEmpty {
                 Button(action: { showingBuilder = true }) {
                     HStack(spacing: 12) {
-                        Image(systemName: "fork.knife")
-                            .font(.title3).foregroundColor(.tmGold.opacity(0.4))
+                        Image(systemName: "fork.knife").font(.title3).foregroundColor(.tmGold.opacity(0.4))
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("No meal plan assigned")
-                                .font(.subheadline).fontWeight(.semibold).foregroundColor(.white.opacity(0.5))
-                            Text("Tap to build and assign a nutrition plan")
-                                .font(.caption).foregroundColor(.white.opacity(0.3))
+                            Text("No meal plan assigned").font(.subheadline).fontWeight(.semibold).foregroundColor(.white.opacity(0.5))
+                            Text("Tap to build and assign a nutrition plan").font(.caption).foregroundColor(.white.opacity(0.3))
                         }
                         Spacer()
                         Image(systemName: "chevron.right").font(.caption).foregroundColor(.tmGold.opacity(0.4))
                     }
                     .padding(14)
+                    // placeholder to match structure
                     .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.03))
-                        .overlay(RoundedRectangle(cornerRadius: 12)
-                            .stroke(Color.tmGold.opacity(0.15), lineWidth: 1)))
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.tmGold.opacity(0.15), lineWidth: 1)))
                 }
                 .buttonStyle(.plain)
-            } else if let p = active ?? plans.first {
-                Button(action: { showingPlans = true }) {
-                    HStack(spacing: 12) {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(Color.tmGold.opacity(0.15)).frame(width: 38, height: 38)
-                            Image(systemName: "fork.knife").font(.system(size: 14)).foregroundColor(.tmGold)
-                        }
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text(p.title)
-                                .font(.system(size: 13, weight: .semibold)).foregroundColor(.white)
-                            Text("\(p.dailyCalories) cal/day · \(p.meals.count) meals")
-                                .font(.caption).foregroundColor(.white.opacity(0.4))
-                        }
-                        Spacer()
-                        if p.isActive {
-                            Text("ACTIVE").font(.system(size: 9, weight: .bold)).foregroundColor(.black)
-                                .padding(.horizontal, 8).padding(.vertical, 3)
-                                .background(Capsule().fill(Color.tmGold))
-                        }
+            } else {
+                // Show all plans as tappable cards
+                VStack(spacing: 10) {
+                    ForEach(plans) { plan in
+                        Button(action: { selectedPlan = plan }) {
+                            SBMealPlanClientCard(plan: plan)
+                        }.buttonStyle(.plain)
                     }
-                    .padding(12)
-                    .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.04)))
                 }
-                .buttonStyle(.plain)
             }
         }
         .onAppear {
-            Task { logEntries = await logStore.fetchLogEntries(forClient: clientId) }
+            guard let uuid = UUID(uuidString: clientId) else { return }
+            Task {
+                try? await planStore.fetchForClient(uuid)
+                logEntries = await logStore.fetchLogEntries(forClient: clientId)
+            }
         }
         .sheet(isPresented: $showingPlans) {
-            NavigationView {
-                TrainerClientMealPlansView(trainerId: trainerId, clientId: clientId, clientName: clientName)
-            }
-            .tint(.tmGold).navigationViewStyle(StackNavigationViewStyle())
+            NavigationView { TrainerClientMealPlansView(trainerId: trainerId, clientId: clientId, clientName: clientName) }
+                .tint(.tmGold).navigationViewStyle(StackNavigationViewStyle())
         }
         .sheet(isPresented: $showingBuilder) {
-            NavigationView {
-                MealPlanBuilderView(trainerId: trainerId, clientId: clientId, clientName: clientName)
-            }
-            .tint(.tmGold).navigationViewStyle(StackNavigationViewStyle())
+            NavigationView { MealPlanBuilderView(trainerId: trainerId, clientId: clientId, clientName: clientName) }
+                .tint(.tmGold).navigationViewStyle(StackNavigationViewStyle())
         }
         .sheet(isPresented: $showingLogViewer) {
+            NavigationView { TrainerMealLogViewer(clientName: clientName, entries: logEntries) }
+                .tint(.tmGold).navigationViewStyle(StackNavigationViewStyle())
+        }
+        .fullScreenCover(item: $selectedPlan) { plan in MealPlanDetailSheet(plan: plan) }
+        .sheet(isPresented: $showingTemplates) {
             NavigationView {
-                TrainerMealLogViewer(clientName: clientName, entries: logEntries)
-            }
-            .tint(.tmGold).navigationViewStyle(StackNavigationViewStyle())
+                TrainerTemplateLibraryView(
+                    trainerId: trainerId, clientId: clientId,
+                    clientName: clientName, mode: .meal)
+            }.tint(.tmGold).navigationViewStyle(StackNavigationViewStyle())
         }
     }
 
     private func sendLogRequest() {
         isSendingRequest = true
-        print("🔔 sendLogRequest — trainerId: \(trainerId), clientId: \(clientId)")
         Task {
             let oneSignalId = await NutritionLogRequestStore.fetchClientOneSignalId(clientId: clientId)
             let trainerName = await NutritionLogRequestStore.fetchTrainerName(trainerId: trainerId)
-            print("🔔 oneSignalId: '\(oneSignalId)', trainerName: '\(trainerName)'")
             do {
-                try await logStore.requestLog(
-                    clientId:          clientId,
-                    clientOneSignalId: oneSignalId,
-                    trainerName:       trainerName
-                )
-                print("✅ Nutrition log request sent successfully")
-            } catch {
-                print("❌ Nutrition log request failed: \(error)")
-            }
-            await MainActor.run {
-                isSendingRequest = false
-                requestSent      = true
-            }
+                try await logStore.requestLog(clientId: clientId, clientOneSignalId: oneSignalId, trainerName: trainerName)
+            } catch { print("❌ Nutrition log request failed: \(error)") }
+            await MainActor.run { isSendingRequest = false; requestSent = true }
         }
     }
 }
@@ -399,14 +379,10 @@ struct TrainerMealLogViewer: View {
     @Environment(\.dismiss) var dismiss
 
     private var grouped: [(String, [MealLogEntry])] {
-        let fmt = DateFormatter()
-        fmt.dateStyle = .medium
-        let dict = Dictionary(grouping: entries) { entry -> String in
-            fmt.string(from: entry.loggedAt ?? Date())
-        }
+        let fmt = DateFormatter(); fmt.dateStyle = .medium
+        let dict = Dictionary(grouping: entries) { fmt.string(from: $0.loggedAt ?? Date()) }
         return dict.sorted { $0.key > $1.key }
     }
-
     private var totalCalories: Int    { entries.reduce(0) { $0 + $1.calories } }
     private var totalProtein:  Double { entries.reduce(0.0) { $0 + $1.proteinG } }
     private var dayCount:      Int    { max(1, grouped.count) }
@@ -418,75 +394,45 @@ struct TrainerMealLogViewer: View {
                 VStack(alignment: .leading, spacing: 20) {
                     if entries.isEmpty {
                         VStack(spacing: 14) {
-                            Image(systemName: "fork.knife")
-                                .font(.system(size: 48)).foregroundColor(.white.opacity(0.1)).padding(.top, 60)
-                            Text("\(clientName) hasn't logged any meals yet.")
-                                .font(.subheadline).foregroundColor(.white.opacity(0.4))
-                                .multilineTextAlignment(.center)
-                        }
-                        .frame(maxWidth: .infinity)
+                            Image(systemName: "fork.knife").font(.system(size: 48)).foregroundColor(.white.opacity(0.1)).padding(.top, 60)
+                            Text("\(clientName) hasn't logged any meals yet.").font(.subheadline).foregroundColor(.white.opacity(0.4)).multilineTextAlignment(.center)
+                        }.frame(maxWidth: .infinity)
                     } else {
-                        // 3-day summary strip
-                        let avgCal     = totalCalories / dayCount
-                        let avgProtein = String(format: "%.0fg", totalProtein / Double(dayCount))
-                        let totalMeals = entries.count
-
                         VStack(alignment: .leading, spacing: 8) {
-                            Text("3-DAY SUMMARY")
-                                .font(.system(size: 10, weight: .bold)).tracking(1.2).foregroundColor(.tmGold)
+                            Text("3-DAY SUMMARY").font(.system(size: 10, weight: .bold)).tracking(1.2).foregroundColor(.tmGold)
                             HStack(spacing: 0) {
-                                summaryCell("\(avgCal)", "avg cal/day", .tmGold)
+                                summaryCell("\(totalCalories / dayCount)", "avg cal/day", .tmGold)
                                 Divider().background(Color.white.opacity(0.08)).frame(height: 36)
-                                summaryCell(avgProtein, "avg protein", .red)
+                                summaryCell(String(format: "%.0fg", totalProtein / Double(dayCount)), "avg protein", .red)
                                 Divider().background(Color.white.opacity(0.08)).frame(height: 36)
-                                summaryCell("\(totalMeals)", "total meals", .white)
+                                summaryCell("\(entries.count)", "total meals", .white)
                             }
-                            .padding(.vertical, 12)
-                            .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.05)))
+                            .padding(.vertical, 12).background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.05)))
                         }
-
-                        // Entries grouped by day
                         ForEach(grouped, id: \.0) { day, dayEntries in
                             VStack(alignment: .leading, spacing: 8) {
-                                Text(day)
-                                    .font(.system(size: 12, weight: .bold)).foregroundColor(.tmGold)
-
+                                Text(day).font(.system(size: 12, weight: .bold)).foregroundColor(.tmGold)
                                 ForEach(dayEntries) { entry in
                                     VStack(alignment: .leading, spacing: 6) {
                                         HStack {
                                             VStack(alignment: .leading, spacing: 2) {
-                                                Text(entry.mealName)
-                                                    .font(.system(size: 13, weight: .semibold))
-                                                    .foregroundColor(.white)
-                                                Text(entry.mealType)
-                                                    .font(.caption).foregroundColor(.tmGold)
+                                                Text(entry.mealName).font(.system(size: 13, weight: .semibold)).foregroundColor(.white)
+                                                Text(entry.mealType).font(.caption).foregroundColor(.tmGold)
                                             }
                                             Spacer()
                                             VStack(alignment: .trailing, spacing: 2) {
-                                                Text("\(entry.calories) cal")
-                                                    .font(.system(size: 13, weight: .bold))
-                                                    .foregroundColor(.tmGold)
-                                                Text(String(format: "P:%.0fg  C:%.0fg  F:%.0fg",
-                                                            entry.proteinG, entry.carbsG, entry.fatG))
+                                                Text("\(entry.calories) cal").font(.system(size: 13, weight: .bold)).foregroundColor(.tmGold)
+                                                Text(String(format: "P:%.0fg  C:%.0fg  F:%.0fg", entry.proteinG, entry.carbsG, entry.fatG))
                                                     .font(.caption2).foregroundColor(.white.opacity(0.35))
                                             }
                                         }
                                         if !entry.rawText.isEmpty {
-                                            Text("\u{201C}\(entry.rawText)\u{201D}")
-                                                .font(.caption2).foregroundColor(.white.opacity(0.3)).italic()
+                                            Text("\u{201C}\(entry.rawText)\u{201D}").font(.caption2).foregroundColor(.white.opacity(0.3)).italic()
                                         }
                                     }
-                                    .padding(12)
-                                    .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.04)))
+                                    .padding(12).background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.04)))
                                 }
-
-                                let dayTotal = dayEntries.reduce(0) { $0 + $1.calories }
-                                HStack {
-                                    Spacer()
-                                    Text("Day total: \(dayTotal) cal")
-                                        .font(.system(size: 11, weight: .bold))
-                                        .foregroundColor(.tmGold.opacity(0.7))
-                                }
+                                HStack { Spacer(); Text("Day total: \(dayEntries.reduce(0) { $0 + $1.calories }) cal").font(.system(size: 11, weight: .bold)).foregroundColor(.tmGold.opacity(0.7)) }
                             }
                         }
                     }
@@ -494,142 +440,167 @@ struct TrainerMealLogViewer: View {
                 .padding(20)
             }
         }
-        .navigationTitle("\(clientName)'s Meal Log")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(Color.black, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
-        .toolbarColorScheme(.dark, for: .navigationBar)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button(action: { dismiss() }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "chevron.left").fontWeight(.semibold)
-                        Text("Back")
-                    }.foregroundColor(.tmGold)
-                }
-            }
-        }
+        .navigationTitle("\(clientName)'s Meal Log").navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(Color.black, for: .navigationBar).toolbarBackground(.visible, for: .navigationBar).toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbar { ToolbarItem(placement: .navigationBarLeading) { Button(action: { dismiss() }) { HStack(spacing: 4) { Image(systemName: "chevron.left").fontWeight(.semibold); Text("Back") }.foregroundColor(.tmGold) } } }
     }
 
     private func summaryCell(_ value: String, _ label: String, _ color: Color) -> some View {
         VStack(spacing: 3) {
             Text(value).font(.system(size: 16, weight: .black)).foregroundColor(color)
             Text(label).font(.system(size: 9)).foregroundColor(.white.opacity(0.35))
-        }
-        .frame(maxWidth: .infinity)
+        }.frame(maxWidth: .infinity)
     }
 }
-// MARK: - ClientNutritionSection
 
-struct ClientNutritionSection: View {
+
+
+// MARK: - TrainerClientWorkoutSummary
+
+struct TrainerClientWorkoutSummary: View {
+    let trainerId:  String
     let clientId:   String
     let clientName: String
-    let trainerId:  String
-    @ObservedObject private var planStore = SBMealPlanStore.shared
-    @ObservedObject private var logStore  = NutritionLogRequestStore.shared
-    @State private var showingVoiceLog    = false
+    @ObservedObject private var store = SBWorkoutStore.shared
+    @State private var showingBuilder     = false
+    @State private var showingTemplates   = false
+    @State private var selectedWorkout: WorkoutRow? = nil
+    @State private var expandedProgram: String? = nil
 
-    private var plans:  [MealPlanRow] { planStore.plans(forClient: clientId) }
-    private var active: MealPlanRow?  { planStore.activePlan(forClient: clientId) }
+    private var workouts: [WorkoutRow] {
+        store.workouts
+            .filter { $0.clientId.uuidString.uppercased() == clientId.uppercased() }
+            .sorted(by: { ($0.dayNumber ?? 0) < ($1.dayNumber ?? 0) })
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            Text("Nutrition").font(.title2).fontWeight(.bold).foregroundColor(.white)
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                HStack(spacing: 6) {
+                    Image(systemName: "dumbbell.fill").font(.caption).foregroundColor(.tmGold)
+                    Text("WORKOUTS")
+                        .font(.system(size: 11, weight: .bold)).tracking(1.2).foregroundColor(.tmGold)
+                }
+                Spacer()
+                Button(action: { showingBuilder = true }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "plus.circle.fill").font(.caption)
+                        Text("Assign Program").font(.caption).fontWeight(.semibold)
+                    }.foregroundColor(.tmGold)
+                }
+                Button(action: { showingTemplates = true }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "square.and.arrow.down").font(.caption)
+                        Text("Templates").font(.caption).fontWeight(.semibold)
+                    }.foregroundColor(.tmGold)
+                }
+            }
 
-            // Active log request banner — only shown when trainer has requested
-            if let request = logStore.activeRequest, !request.isExpired {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(spacing: 10) {
-                        Image(systemName: "fork.knife.circle.fill")
-                            .font(.title2).foregroundColor(.tmGold)
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("\(request.trainerName) requested a nutrition log")
-                                .font(.system(size: 14, weight: .bold)).foregroundColor(.white)
-                            Text("\(request.daysRemaining) day\(request.daysRemaining == 1 ? "" : "s") remaining")
-                                .font(.caption).foregroundColor(.tmGold)
+            if workouts.isEmpty {
+                Button(action: { showingBuilder = true }) {
+                    HStack(spacing: 12) {
+                        Image(systemName: "dumbbell.fill").font(.title3).foregroundColor(.tmGold.opacity(0.4))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("No workouts assigned").font(.subheadline).fontWeight(.semibold).foregroundColor(.white.opacity(0.5))
+                            Text("Tap to build a weekly program").font(.caption).foregroundColor(.white.opacity(0.3))
                         }
                         Spacer()
+                        Image(systemName: "chevron.right").font(.caption).foregroundColor(.tmGold.opacity(0.4))
                     }
-                    Text("Log your meals for the next 3 days so your trainer can review your eating habits.")
-                        .font(.caption).foregroundColor(.white.opacity(0.6))
-                    Button(action: { showingVoiceLog = true }) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "mic.fill")
-                            Text("LOG A MEAL NOW")
-                                .font(.system(size: 14, weight: .heavy)).tracking(0.5)
-                        }
-                        .foregroundColor(.black).frame(maxWidth: .infinity).frame(height: 48)
-                        .background(RoundedRectangle(cornerRadius: 24).fill(Color.tmGold))
-                    }
-                }
-                .padding(16)
-                .background(RoundedRectangle(cornerRadius: 16).fill(Color.tmGold.opacity(0.08))
-                    .overlay(RoundedRectangle(cornerRadius: 16)
-                        .stroke(Color.tmGold.opacity(0.3), lineWidth: 1)))
-
-                // Show what they've logged so far during the request window
-                DailyNutritionSummaryView(clientId: clientId)
-
+                    .padding(14)
+                    .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.03))
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.tmGold.opacity(0.15), lineWidth: 1)))
+                }.buttonStyle(.plain)
             } else {
-                // No active request — show trainer-assigned meal plan as normal
-                if let plan = active ?? plans.first {
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("MEAL PLAN")
-                            .font(.system(size: 10, weight: .bold)).tracking(1.2).foregroundColor(.tmGold)
-                        Text(plan.title)
-                            .font(.system(size: 15, weight: .bold)).foregroundColor(.white)
-                        HStack(spacing: 0) {
-                            macroCell("\(plan.dailyCalories)", "kcal",   .tmGold)
-                            macroCell(String(format: "%.0fg", plan.proteinG), "protein", .red)
-                            macroCell(String(format: "%.0fg", plan.carbsG),   "carbs",   .blue)
-                            macroCell(String(format: "%.0fg", plan.fatG),     "fats",    .yellow)
-                        }
-                        .padding(.vertical, 12)
-                        .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.04)))
-
-                        ForEach(plan.meals.prefix(3)) { meal in
-                            HStack {
-                                Text(meal.mealType)
-                                    .font(.caption).foregroundColor(.tmGold).frame(width: 80, alignment: .leading)
-                                Text(meal.name).font(.subheadline).foregroundColor(.white)
-                                Spacer()
-                                Text("\(meal.calories) cal")
-                                    .font(.caption).foregroundColor(.white.opacity(0.5))
+                VStack(spacing: 10) {
+                    let cal = Calendar.current
+                    let grouped = Dictionary(grouping: workouts) { w -> String in
+                        guard let date = w.createdAt else { return "unknown" }
+                        let c = cal.dateComponents([.year,.month,.day,.hour,.minute], from: date)
+                        return "\(c.year ?? 0)-\(c.month ?? 0)-\(c.day ?? 0)-\(c.hour ?? 0)-\(c.minute ?? 0)"
+                    }
+                    let programs = grouped
+                        .map { key, days in (key, days.sorted(by: { ($0.dayNumber ?? 0) < ($1.dayNumber ?? 0) })) }
+                        .sorted { $0.1.first?.createdAt ?? .distantPast > $1.1.first?.createdAt ?? .distantPast }
+                    ForEach(programs, id: \.0) { key, days in
+                        WeeklyProgramCard(
+                            days: days,
+                            isExpanded: expandedProgram == key,
+                            onTap: { expandedProgram = expandedProgram == key ? nil : key },
+                            onSelectWorkout: { workout in
+                                if workout.isRestDay != true { selectedWorkout = workout }
                             }
-                            .padding(10)
-                            .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.04)))
-                        }
+                        )
                     }
-                } else {
-                    VStack(spacing: 12) {
-                        Image(systemName: "fork.knife")
-                            .font(.system(size: 40)).foregroundColor(.tmGold.opacity(0.2))
-                        Text("No active meal plan")
-                            .font(.subheadline).foregroundColor(.white.opacity(0.4))
-                        Text("Your trainer hasn't assigned a nutrition plan yet.")
-                            .font(.caption).foregroundColor(.white.opacity(0.3)).multilineTextAlignment(.center)
-                    }
-                    .frame(maxWidth: .infinity).padding(.vertical, 24)
-                    .background(RoundedRectangle(cornerRadius: 16).fill(Color.white.opacity(0.03)))
                 }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .onAppear {
-            planStore.loadForClient(clientId)
-            Task { await logStore.fetchActiveRequest(forClient: clientId) }
+        .onAppear { store.loadForClient(clientId) }
+        .sheet(isPresented: $showingBuilder) {
+            NavigationView {
+                WorkoutBuilderView(trainerId: trainerId, clientId: clientId, clientName: clientName)
+            }
+            .tint(.tmGold).navigationViewStyle(StackNavigationViewStyle())
         }
-        .sheet(isPresented: $showingVoiceLog) {
-            VoiceMealLoggerView(clientId: clientId)
+        .fullScreenCover(item: $selectedWorkout) { workout in
+            WorkoutDetailSheet(workout: workout, onMarkComplete: {})
         }
     }
+}
 
-    private func macroCell(_ value: String, _ label: String, _ color: Color) -> some View {
-        VStack(spacing: 3) {
-            Text(value).font(.system(size: 16, weight: .black)).foregroundColor(color)
-            Text(label).font(.system(size: 9)).foregroundColor(.white.opacity(0.35))
+
+// MARK: - RecentMessagesSection
+
+struct RecentMessagesSection: View {
+    let messages:  [VideoMessage]
+    let viewModel: VideoMessageViewModel
+    let onViewAll: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                HStack(spacing: 6) {
+                    Image(systemName: "video.fill").font(.caption).foregroundColor(.tmGold)
+                    Text("RECENT MESSAGES")
+                        .font(.system(size: 11, weight: .bold)).tracking(1.2).foregroundColor(.tmGold)
+                }
+                Spacer()
+                if !messages.isEmpty {
+                    Button("View All", action: onViewAll)
+                        .font(.caption).fontWeight(.semibold).foregroundColor(.tmGold)
+                }
+            }
+
+            if messages.isEmpty {
+                HStack(spacing: 10) {
+                    Image(systemName: "video").foregroundColor(.white.opacity(0.2))
+                    Text("No video messages yet").font(.caption).foregroundColor(.white.opacity(0.35))
+                }
+                .padding(12)
+                .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.03)))
+            } else {
+                VStack(spacing: 8) {
+                    ForEach(messages.prefix(3)) { msg in
+                        HStack(spacing: 12) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 8).fill(Color.tmGold.opacity(0.15)).frame(width: 40, height: 40)
+                                Image(systemName: "play.fill").font(.system(size: 14)).foregroundColor(.tmGold)
+                            }
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(msg.title).font(.system(size: 13, weight: .semibold)).foregroundColor(.white).lineLimit(1)
+                                Text(msg.message).font(.caption).foregroundColor(.white.opacity(0.45)).lineLimit(1)
+                            }
+                            Spacer()
+                            if !msg.isViewed {
+                                Circle().fill(Color.tmGold).frame(width: 8, height: 8)
+                            }
+                        }
+                        .padding(10)
+                        .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.04)))
+                    }
+                }
+            }
         }
-        .frame(maxWidth: .infinity)
     }
 }
 
@@ -646,44 +617,30 @@ struct TrainerAllCheckInsForClientView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 6) {
                 Image(systemName: "camera.fill").font(.caption).foregroundColor(.tmGold)
-                Text("CHECK-INS")
-                    .font(.system(size: 11, weight: .bold)).tracking(1.2).foregroundColor(.tmGold)
+                Text("CHECK-INS").font(.system(size: 11, weight: .bold)).tracking(1.2).foregroundColor(.tmGold)
                 Spacer()
                 Text("\(checkIns.count) total").font(.caption).foregroundColor(.white.opacity(0.4))
             }
-
             if checkIns.isEmpty {
                 HStack(spacing: 10) {
                     Image(systemName: "camera").foregroundColor(.white.opacity(0.2))
-                    Text("No check-ins submitted yet")
-                        .font(.caption).foregroundColor(.white.opacity(0.35))
+                    Text("No check-ins submitted yet").font(.caption).foregroundColor(.white.opacity(0.35))
                 }
-                .padding(12)
-                .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.03)))
+                .padding(12).background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.03)))
             } else {
                 ForEach(checkIns.prefix(5)) { ci in
                     HStack(spacing: 12) {
-                        if let url  = ci.frontURL,
-                           let data = try? Data(contentsOf: url),
-                           let img  = UIImage(data: data) {
-                            Image(uiImage: img).resizable().scaledToFill()
-                                .frame(width: 48, height: 48)
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
-                        } else {
-                            RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.06))
-                                .frame(width: 48, height: 48)
-                                .overlay(Image(systemName: "camera").foregroundColor(.white.opacity(0.3)))
-                        }
+                        RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.06))
+                            .frame(width: 48, height: 48)
+                            .overlay(Image(systemName: "camera").foregroundColor(.white.opacity(0.3)))
                         VStack(alignment: .leading, spacing: 3) {
-                            Text(ci.formattedDate)
-                                .font(.system(size: 13, weight: .semibold)).foregroundColor(.white)
+                            Text(ci.formattedDate).font(.system(size: 13, weight: .semibold)).foregroundColor(.white)
                             Text(ci.formattedWeight).font(.caption).foregroundColor(.tmGold)
                         }
                         Spacer()
                         Image(systemName: "chevron.right").font(.caption).foregroundColor(.white.opacity(0.3))
                     }
-                    .padding(10)
-                    .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.04)))
+                    .padding(10).background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.04)))
                 }
             }
         }
@@ -698,10 +655,15 @@ struct ClientCheckInHistoryView: View {
     @ObservedObject private var store = SBCheckInStore.shared
     @Environment(\.dismiss) var dismiss
 
+    private var items: [CheckInRow] {
+        store.checkIns.filter {
+            $0.clientId.uuidString.uppercased() == clientId.uppercased()
+        }
+    }
+
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            let items = store.checkIns(forClient: clientId)
             if items.isEmpty {
                 VStack(spacing: 14) {
                     Image(systemName: "camera.viewfinder").font(.system(size: 48))
@@ -712,21 +674,7 @@ struct ClientCheckInHistoryView: View {
                 ScrollView {
                     LazyVStack(spacing: 12) {
                         ForEach(items) { ci in
-                            HStack {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(ci.formattedDate)
-                                        .font(.system(size: 14, weight: .semibold)).foregroundColor(.white)
-                                    Text(ci.formattedWeight).font(.caption).foregroundColor(.tmGold)
-                                    if !ci.notes.isEmpty {
-                                        Text(ci.notes).font(.caption2).foregroundColor(.white.opacity(0.4))
-                                    }
-                                }
-                                Spacer()
-                                Text("\(ci.photoUrls.count) photos")
-                                    .font(.caption2).foregroundColor(.white.opacity(0.35))
-                            }
-                            .padding(14)
-                            .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.05)))
+                            SBCheckInHistoryRow(checkIn: ci)
                         }
                     }
                     .padding(20)
@@ -737,17 +685,46 @@ struct ClientCheckInHistoryView: View {
         .toolbarBackground(Color.black, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button(action: { dismiss() }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "chevron.left").fontWeight(.semibold)
-                        Text("Back")
-                    }.foregroundColor(.tmGold)
-                }
-            }
+        .toolbar { ToolbarItem(placement: .navigationBarLeading) { Button(action: { dismiss() }) { HStack(spacing: 4) { Image(systemName: "chevron.left").fontWeight(.semibold); Text("Back") }.foregroundColor(.tmGold) } } }
+        .onAppear {
+            guard let uuid = UUID(uuidString: clientId) else { return }
+            Task { try? await store.fetchForClient(uuid) }
         }
-        .onAppear { store.loadForClient(clientId) }
+    }
+}
+
+// MARK: - SBCheckInHistoryRow
+
+struct SBCheckInHistoryRow: View {
+    let checkIn: CheckInRow
+    var body: some View {
+        HStack(spacing: 12) {
+            // Photo thumbnail
+            if let url = checkIn.photoUrls.first.flatMap({ URL(string: $0) }) {
+                AsyncImage(url: url) { img in
+                    img.resizable().scaledToFill()
+                        .frame(width: 50, height: 50).clipShape(RoundedRectangle(cornerRadius: 8))
+                } placeholder: {
+                    RoundedRectangle(cornerRadius: 8).fill(Color.purple.opacity(0.15))
+                        .frame(width: 50, height: 50)
+                        .overlay(Image(systemName: "camera.fill").foregroundColor(.purple))
+                }
+            } else {
+                RoundedRectangle(cornerRadius: 8).fill(Color.purple.opacity(0.15))
+                    .frame(width: 50, height: 50)
+                    .overlay(Image(systemName: "camera.fill").foregroundColor(.purple))
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text((checkIn.checkedInAt ?? Date()).formatted(date: .abbreviated, time: .omitted))
+                    .font(.system(size: 14, weight: .semibold)).foregroundColor(.white)
+                let count = checkIn.photoUrls.count
+                Text("\(count) photo\(count == 1 ? "" : "s")")
+                    .font(.caption2).foregroundColor(.white.opacity(0.35))
+            }
+            Spacer()
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.05)))
     }
 }
 
@@ -787,10 +764,8 @@ struct ClientSubmitCheckInView: View {
                         photoCell("Right", item: $rightItem, image: $rightImage)
                         photoCell("Left",  item: $leftItem,  image: $leftImage)
                     }
-
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("MORNING WEIGHT")
-                            .font(.system(size: 10, weight: .bold)).tracking(1.2).foregroundColor(.tmGold)
+                        Text("MORNING WEIGHT").font(.system(size: 10, weight: .bold)).tracking(1.2).foregroundColor(.tmGold)
                         HStack {
                             TextField("0.0", text: $weightText).keyboardType(.decimalPad)
                                 .font(.system(size: 32, weight: .black)).foregroundColor(.tmGold)
@@ -808,29 +783,21 @@ struct ClientSubmitCheckInView: View {
                             .background(RoundedRectangle(cornerRadius: 18).fill(Color.white.opacity(0.08)))
                             .clipShape(RoundedRectangle(cornerRadius: 18))
                         }
-                        .padding(14)
-                        .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
+                        .padding(14).background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
                     }
-
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("NOTE (OPTIONAL)")
-                            .font(.system(size: 10, weight: .bold)).tracking(1.2).foregroundColor(.tmGold)
+                        Text("NOTE (OPTIONAL)").font(.system(size: 10, weight: .bold)).tracking(1.2).foregroundColor(.tmGold)
                         TextField("How are you feeling?", text: $notes, axis: .vertical)
                             .foregroundColor(.white).lineLimit(3...5).padding(14)
                             .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
                     }
-
                     Button(action: submit) {
                         HStack(spacing: 8) {
-                            if isSaving { ProgressView().tint(.black) } else {
-                                Image(systemName: "paperplane.fill")
-                                Text("SUBMIT CHECK-IN")
-                                    .font(.system(size: 15, weight: .heavy)).tracking(0.5)
-                            }
+                            if isSaving { ProgressView().tint(.black) }
+                            else { Image(systemName: "paperplane.fill"); Text("SUBMIT CHECK-IN").font(.system(size: 15, weight: .heavy)).tracking(0.5) }
                         }
                         .foregroundColor(.black).frame(maxWidth: .infinity).frame(height: 54)
-                        .background(RoundedRectangle(cornerRadius: 27)
-                            .fill(canSubmit ? Color.tmGold : Color.tmGold.opacity(0.3)))
+                        .background(RoundedRectangle(cornerRadius: 27).fill(canSubmit ? Color.tmGold : Color.tmGold.opacity(0.3)))
                     }
                     .disabled(!canSubmit || isSaving)
                 }
@@ -838,35 +805,20 @@ struct ClientSubmitCheckInView: View {
             }
         }
         .navigationTitle("Weekly Check-In").navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(Color.black, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
-        .toolbarColorScheme(.dark, for: .navigationBar)
-        .toolbar {
-            ToolbarItem(placement: .navigationBarLeading) {
-                Button("Cancel") { dismiss() }.foregroundColor(.tmGold)
-            }
-        }
-        .alert("Check-In Submitted! ✅", isPresented: $showSuccess) {
-            Button("Done") { dismiss() }
-        } message: {
-            Text("Your trainer will review your progress soon.")
-        }
+        .toolbarBackground(Color.black, for: .navigationBar).toolbarBackground(.visible, for: .navigationBar).toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbar { ToolbarItem(placement: .navigationBarLeading) { Button("Cancel") { dismiss() }.foregroundColor(.tmGold) } }
+        .alert("Check-In Submitted! ✅", isPresented: $showSuccess) { Button("Done") { dismiss() } }
+        message: { Text("Your trainer will review your progress soon.") }
     }
 
-    private func photoCell(_ label: String,
-                           item: Binding<PhotosPickerItem?>,
-                           image: Binding<UIImage?>) -> some View {
+    private func photoCell(_ label: String, item: Binding<PhotosPickerItem?>, image: Binding<UIImage?>) -> some View {
         PhotosPicker(selection: item, matching: .images) {
             ZStack {
                 RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.05))
-                    .overlay(RoundedRectangle(cornerRadius: 14)
-                        .stroke(image.wrappedValue != nil
-                                ? Color.tmGold.opacity(0.5)
-                                : Color.white.opacity(0.1), lineWidth: 1))
+                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(image.wrappedValue != nil ? Color.tmGold.opacity(0.5) : Color.white.opacity(0.1), lineWidth: 1))
                     .frame(height: 140)
                 if let img = image.wrappedValue {
-                    Image(uiImage: img).resizable().scaledToFill()
-                        .frame(height: 140).clipShape(RoundedRectangle(cornerRadius: 14))
+                    Image(uiImage: img).resizable().scaledToFill().frame(height: 140).clipShape(RoundedRectangle(cornerRadius: 14))
                 } else {
                     VStack(spacing: 8) {
                         Image(systemName: "camera.fill").font(.title2).foregroundColor(.white.opacity(0.3))
@@ -876,31 +828,18 @@ struct ClientSubmitCheckInView: View {
             }
         }
         .onChange(of: item.wrappedValue) { _, newItem in
-            Task {
-                if let data = try? await newItem?.loadTransferable(type: Data.self) {
-                    image.wrappedValue = UIImage(data: data)
-                }
-            }
+            Task { if let data = try? await newItem?.loadTransferable(type: Data.self) { image.wrappedValue = UIImage(data: data) } }
         }
     }
 
     private func submit() {
-        guard let w           = Double(weightText),
-              let clientUUID  = UUID(uuidString: clientId),
-              let trainerUUID = UUID(uuidString: trainerId) else { return }
+        guard let w = Double(weightText), let clientUUID = UUID(uuidString: clientId), let trainerUUID = UUID(uuidString: trainerId) else { return }
         isSaving = true
-
         var photoData: [Data] = []
         for img in [frontImage, rearImage, rightImage, leftImage].compactMap({ $0 }) {
             if let d = img.jpegData(compressionQuality: 0.7) { photoData.append(d) }
         }
-
-        let row = CheckInRow(
-            id: UUID(), trainerId: trainerUUID, clientId: clientUUID,
-            weight: w, notes: notes, photoUrls: [],
-            energyLevel: nil, sleepHours: nil, waterOz: nil,
-            checkedInAt: Date(), createdAt: Date()
-        )
+        let row = CheckInRow(id: UUID(), trainerId: trainerUUID, clientId: clientUUID, weight: w, notes: notes, photoUrls: [], energyLevel: nil, sleepHours: nil, waterOz: nil, checkedInAt: Date(), createdAt: Date())
         Task {
             try? await SBCheckInStore.shared.submit(row, photos: photoData)
             await MainActor.run { isSaving = false; showSuccess = true }

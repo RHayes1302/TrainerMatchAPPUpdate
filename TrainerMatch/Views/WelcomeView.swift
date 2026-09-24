@@ -200,7 +200,7 @@ struct WelcomeView: View {
     @ViewBuilder
     private func destinationView(for destination: NavigationDestination?) -> some View {
         switch destination {
-        case .myHealth:         ContentView()
+        case .myHealth:         EmptyView()
         case .trainerDashboard: TrainerDashboardView()
         case .aboutUs:          AboutUsView()
         case .successStories:   SuccessStoriesView()

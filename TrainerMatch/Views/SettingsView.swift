@@ -62,6 +62,22 @@ struct SettingsView: View {
                         settingsRow(icon: "info.circle.fill", label: "Version", value: appVersion)
                         Divider().background(Color.white.opacity(0.08))
                         settingsRow(icon: "hammer.fill", label: "Build", value: buildNumber)
+                        Divider().background(Color.white.opacity(0.08))
+                        NavigationLink(destination: NotificationDebugView()) {
+                            HStack(spacing: 12) {
+                                Image(systemName: "bell.badge.waveform.fill")
+                                    .font(.system(size: 16))
+                                    .foregroundColor(.tmGold)
+                                    .frame(width: 28)
+                                Text("Push Notification Debug")
+                                    .font(.system(size: 15))
+                                    .foregroundColor(.white)
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.caption)
+                                    .foregroundColor(.white.opacity(0.3))
+                            }
+                        }
                     }
 
                     // Danger zone

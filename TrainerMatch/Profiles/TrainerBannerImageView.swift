@@ -7,6 +7,15 @@
 
 //
 //  TrainerBannerImageView.swift
+//
+//  TrainerBannerImageView.swift
+//  TrainerMatch
+//
+//  Created by Ramone Hayes on 2/26/26.
+//
+
+//
+//  TrainerBannerImageView.swift
 //  TrainerMatch
 //
 //  Facebook-style cover photo banner for trainer profiles.

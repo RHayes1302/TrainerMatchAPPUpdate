@@ -14,7 +14,8 @@ import AgoraRtcKit
 class VideoCallManager: NSObject, ObservableObject {
     static let shared = VideoCallManager()
 
-    private let appId = "a39e8f9686144cee997be986c433f21c"
+    private let appId       = "a39e8f9686144cee997be986c433f21c"
+    private let tokenServer = "https://axmxhxdqfxedltjclssz.supabase.co/functions/v1/Agoravideocall"
     private var agoraKit: AgoraRtcEngineKit?
 
     @Published var isInCall        = false
@@ -28,6 +29,8 @@ class VideoCallManager: NSObject, ObservableObject {
 
     private var durationTimer: Timer?
     private var currentChannel = ""
+    var isTransitioning = false  // prevents spurious endCall during sheet transition
+    private var isJoining = false      // prevents double join
 
     override private init() { super.init() }
 
@@ -38,10 +41,18 @@ class VideoCallManager: NSObject, ObservableObject {
         agoraKit = AgoraRtcEngineKit.sharedEngine(with: config, delegate: self)
         agoraKit?.enableVideo()
         agoraKit?.enableAudio()
+
+        // Enable Cloud Proxy — forces traffic through Agora relay servers
+        // This bypasses NAT/firewall issues that cause error 110
+        agoraKit?.setCloudProxy(.udpProxy)
+
         print("✅ Agora engine initialized")
     }
 
     func startCall(channel: String, token: String? = nil, uid: UInt = 0) {
+        guard !isJoining else { print("⚠️ Already joining — ignoring duplicate startCall"); return }
+        isJoining = true
+        isTransitioning = false
         setupAgora()
         currentChannel = channel
         isInCall = true
@@ -49,28 +60,90 @@ class VideoCallManager: NSObject, ObservableObject {
         remoteJoined = false
         callError = nil
 
-        let option = AgoraRtcChannelMediaOptions()
-        option.clientRoleType = .broadcaster
-        option.channelProfile  = .communication
+        // Fetch a fresh token from Supabase then join
+        Task {
+            let fetchedToken = await fetchToken(channel: channel)
+            await MainActor.run {
+                // Guard: if engine was destroyed while fetching token, restart it
+                if self.agoraKit == nil {
+                    print("⚠️ Engine was destroyed during token fetch — reinitializing")
+                    self.setupAgora()
+                }
 
-        let result = agoraKit?.joinChannel(
-            byToken: token,
-            channelId: channel,
-            uid: uid,
-            mediaOptions: option
-        )
+                guard self.isInCall else {
+                    print("⚠️ Call was cancelled during token fetch")
+                    self.isJoining = false
+                    return
+                }
 
-        if result == 0 {
-            print("✅ Joined Agora channel: \(channel)")
-            startDurationTimer()
-        } else {
-            callError = "Failed to join channel. Check your connection."
-            isInCall = false
+                let option = AgoraRtcChannelMediaOptions()
+                option.clientRoleType = .broadcaster
+                option.channelProfile  = .communication
+
+                let result = self.agoraKit?.joinChannel(
+                    byToken: fetchedToken,
+                    channelId: channel,
+                    uid: uid,
+                    mediaOptions: option
+                )
+
+                self.isJoining = false
+                if result == 0 {
+                    print("✅ Joined Agora channel: \(channel)")
+                    self.startDurationTimer()
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        self.agoraKit?.startPreview()
+                        self.agoraKit?.muteLocalVideoStream(false)
+                        self.agoraKit?.enableLocalVideo(true)
+                    }
+                } else {
+                    print("⚠️ joinChannel returned: \(result ?? -1)")
+                    if result != -17 {
+                        self.callError = "Failed to join. Please try again."
+                        self.isInCall = false
+                    }
+                }
+            }
         }
     }
 
+    private func fetchToken(channel: String) async -> String? {
+        let urlString = "\(tokenServer)?channel=\(channel)&uid=0&role=publisher"
+        guard let url = URL(string: urlString) else {
+            print("❌ Invalid token server URL")
+            return nil
+        }
+        do {
+            let anonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF4bXhoeGRxZnhlZGx0amNsc3N6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDY3MzE3NTAsImV4cCI6MjA2MjMwNzc1MH0.4VFqBtPHRCgpNu5qBiIg6tkBpSHGdxBiJRxFijbwliY"
+            var request = URLRequest(url: url)
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue("Bearer \(anonKey)", forHTTPHeaderField: "Authorization")
+            request.setValue(anonKey, forHTTPHeaderField: "apikey")
+            let (data, response) = try await URLSession.shared.data(for: request)
+            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
+            let responseStr = String(data: data, encoding: .utf8) ?? ""
+            print("🔑 Token server response (\(statusCode)): \(responseStr)")
+            if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+               let token = json["token"] as? String {
+                print("✅ Agora token fetched for channel: \(channel)")
+                return token
+            } else {
+                print("❌ Token parse failed: \(responseStr)")
+            }
+        } catch {
+            print("❌ Token fetch failed: \(error)")
+        }
+        return nil
+    }
+
     func endCall() {
+        guard !isTransitioning && !isJoining else {
+            print("⚠️ endCall blocked — transitioning or joining")
+            return
+        }
         agoraKit?.leaveChannel()
+        AgoraRtcEngineKit.destroy()
+        agoraKit = nil
         stopDurationTimer()
         isInCall      = false
         remoteJoined  = false
@@ -78,7 +151,20 @@ class VideoCallManager: NSObject, ObservableObject {
         callDuration  = 0
         isLocalMuted  = false
         isCameraOff   = false
+        callError     = nil
         print("✅ Left Agora channel")
+    }
+
+    func resetAfterCall() {
+        isTransitioning = false
+        isJoining = false
+        isInCall        = false
+        remoteJoined    = false
+        remoteUid       = 0
+        callDuration    = 0
+        isLocalMuted    = false
+        isCameraOff     = false
+        callError       = nil
     }
 
     func toggleMute() {
@@ -121,9 +207,9 @@ class VideoCallManager: NSObject, ObservableObject {
         return String(format: "%02d:%02d", m, s)
     }
 
-    // Generate a channel name from trainer + client IDs
+    // Generate a channel name — always uppercase for consistency
     static func channelName(trainerId: String, clientId: String) -> String {
-        let combined = "\(trainerId.prefix(8))_\(clientId.prefix(8))"
+        let combined = "\(trainerId.uppercased().prefix(8))_\(clientId.uppercased().prefix(8))"
         return combined.filter { $0.isLetter || $0.isNumber || $0 == "_" }
     }
 }
@@ -161,7 +247,7 @@ extension VideoCallManager: AgoraRtcEngineDelegate {
     }
 }
 
-// MARK: - Local Video View (UIViewRepresentable)
+// MARK: - Local Video View
 
 struct LocalVideoView: UIViewRepresentable {
     @ObservedObject var manager: VideoCallManager
@@ -170,17 +256,24 @@ struct LocalVideoView: UIViewRepresentable {
         let view = UIView(frame: .zero)
         view.backgroundColor = .black
         let canvas = AgoraRtcVideoCanvas()
-        canvas.uid     = 0
-        canvas.view    = view
+        canvas.uid        = 0
+        canvas.view       = view
         canvas.renderMode = .hidden
         manager.setupLocalVideo(canvas: canvas)
         return view
     }
 
-    func updateUIView(_ uiView: UIView, context: Context) {}
+    func updateUIView(_ uiView: UIView, context: Context) {
+        // Re-attach canvas whenever view updates to prevent blank camera
+        let canvas = AgoraRtcVideoCanvas()
+        canvas.uid        = 0
+        canvas.view       = uiView
+        canvas.renderMode = .hidden
+        manager.setupLocalVideo(canvas: canvas)
+    }
 }
 
-// MARK: - Remote Video View (UIViewRepresentable)
+// MARK: - Remote Video View
 
 struct RemoteVideoView: UIViewRepresentable {
     let uid: UInt
@@ -216,16 +309,13 @@ struct AgoraVideoCallView: View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            // Remote video (full screen)
             if manager.remoteJoined {
                 RemoteVideoView(uid: manager.remoteUid, manager: manager)
                     .ignoresSafeArea()
             } else {
-                // Waiting screen
                 waitingView
             }
 
-            // Local video (picture-in-picture)
             VStack {
                 HStack {
                     Spacer()
@@ -258,7 +348,6 @@ struct AgoraVideoCallView: View {
                 Spacer()
             }
 
-            // Top bar
             VStack {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
@@ -282,6 +371,9 @@ struct AgoraVideoCallView: View {
                                 Text("Muted").font(.caption2).foregroundColor(.orange)
                             }
                         }
+                        // Debug channel name — remove after confirming calls work
+                        Text("Channel: \(channelName)")
+                            .font(.system(size: 9)).foregroundColor(.white.opacity(0.3))
                     }
                     Spacer()
                 }
@@ -292,22 +384,27 @@ struct AgoraVideoCallView: View {
                 Spacer()
             }
 
-            // Bottom controls
             VStack {
                 Spacer()
                 if let error = manager.callError {
                     Text(error).font(.caption).foregroundColor(.orange)
                         .padding(.horizontal, 20).padding(.bottom, 8)
                 }
-                controlBar
-                    .padding(.bottom, 40)
+                controlBar.padding(.bottom, 40)
             }
         }
         .onAppear {
+            print("🎥 Joining channel: \(channelName)")
             manager.startCall(channel: channelName, token: token)
         }
         .onDisappear {
-            manager.endCall()
+            if manager.isTransitioning {
+                // Transitioning to live call — don't end, just reset the flag
+                // The live call view will start fresh
+                manager.isTransitioning = false
+            } else {
+                manager.endCall()
+            }
         }
         .confirmationDialog(
             "End the call with \(remotePersonName)?",
@@ -347,7 +444,6 @@ struct AgoraVideoCallView: View {
 
     private var controlBar: some View {
         HStack(spacing: 24) {
-            // Mute
             callButton(
                 icon: manager.isLocalMuted ? "mic.slash.fill" : "mic.fill",
                 label: manager.isLocalMuted ? "Unmute" : "Mute",
@@ -355,7 +451,6 @@ struct AgoraVideoCallView: View {
                 bg: Color.white.opacity(0.15)
             ) { manager.toggleMute() }
 
-            // Camera
             callButton(
                 icon: manager.isCameraOff ? "video.slash.fill" : "video.fill",
                 label: manager.isCameraOff ? "Camera On" : "Camera Off",
@@ -363,7 +458,6 @@ struct AgoraVideoCallView: View {
                 bg: Color.white.opacity(0.15)
             ) { manager.toggleCamera() }
 
-            // End Call
             callButton(
                 icon: "phone.down.fill",
                 label: "End",
@@ -372,7 +466,6 @@ struct AgoraVideoCallView: View {
                 size: 60
             ) { showingEndConfirm = true }
 
-            // Flip Camera
             callButton(
                 icon: "camera.rotate.fill",
                 label: "Flip",
@@ -380,7 +473,6 @@ struct AgoraVideoCallView: View {
                 bg: Color.white.opacity(0.15)
             ) { manager.flipCamera() }
 
-            // Speaker (placeholder)
             callButton(
                 icon: "speaker.wave.2.fill",
                 label: "Speaker",
@@ -388,8 +480,7 @@ struct AgoraVideoCallView: View {
                 bg: Color.white.opacity(0.15)
             ) { }
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 20)
+        .padding(.horizontal, 20).padding(.vertical, 20)
         .background(
             LinearGradient(colors: [.clear, .black.opacity(0.8)],
                            startPoint: .top, endPoint: .bottom)
@@ -411,7 +502,7 @@ struct AgoraVideoCallView: View {
     }
 }
 
-// MARK: - Call Invite Sheet (shown before joining)
+// MARK: - Call Invite Sheet
 
 struct VideoCallInviteView: View {
     let channelName:      String
@@ -428,8 +519,6 @@ struct VideoCallInviteView: View {
             Color.black.ignoresSafeArea()
             VStack(spacing: 32) {
                 Spacer()
-
-                // Animated ring
                 ZStack {
                     ForEach(0..<3) { i in
                         Circle()
@@ -439,7 +528,6 @@ struct VideoCallInviteView: View {
                     Circle().fill(Color.tmGold.opacity(0.15)).frame(width: 120, height: 120)
                     Image(systemName: "video.fill").font(.system(size: 48)).foregroundColor(.tmGold)
                 }
-
                 VStack(spacing: 10) {
                     Text(isTrainer ? "Start Video Call" : "Incoming Video Call")
                         .font(.title2).fontWeight(.bold).foregroundColor(.white)
@@ -448,10 +536,11 @@ struct VideoCallInviteView: View {
                          : "\(remotePersonName) is calling you")
                         .font(.subheadline).foregroundColor(.white.opacity(0.6))
                         .multilineTextAlignment(.center).padding(.horizontal, 40)
+                    // Debug — remove after confirming calls work
+                    Text("Channel: \(channelName)")
+                        .font(.system(size: 10)).foregroundColor(.white.opacity(0.3))
                 }
-
                 HStack(spacing: 40) {
-                    // Decline
                     Button(action: { onDecline(); dismiss() }) {
                         VStack(spacing: 8) {
                             Circle().fill(Color.red).frame(width: 70, height: 70)
@@ -460,8 +549,6 @@ struct VideoCallInviteView: View {
                             Text("Decline").font(.caption).fontWeight(.semibold).foregroundColor(.white)
                         }
                     }
-
-                    // Accept / Join
                     Button(action: { onJoin(); dismiss() }) {
                         VStack(spacing: 8) {
                             Circle().fill(Color.green).frame(width: 70, height: 70)
@@ -472,7 +559,6 @@ struct VideoCallInviteView: View {
                         }
                     }
                 }
-
                 Spacer()
             }
         }

@@ -5,10 +5,10 @@
 
 import SwiftUI
 
-// MARK: - Models (unchanged)
+// MARK: - Models
 
 struct PARQForm: Identifiable, Codable {
-    let id: String
+    var id: String
     var trainerId:    String
     var clientId:     String
     var clientName:   String
@@ -19,9 +19,17 @@ struct PARQForm: Identifiable, Codable {
     var fitnessBackground: FitnessBackground?
 
     enum PARQStatus: String, Codable {
-        case pending   = "Pending"
-        case completed = "Completed"
-        case reviewed  = "Reviewed"
+        case pending   = "pending"
+        case completed = "completed"
+        case reviewed  = "reviewed"
+
+        var displayLabel: String {
+            switch self {
+            case .pending:   return "Pending"
+            case .completed: return "Completed"
+            case .reviewed:  return "Reviewed"
+            }
+        }
     }
 
     var isSubmitted: Bool { status != .pending }
@@ -133,7 +141,7 @@ struct FitnessBackground: Codable {
 
     enum ActivityFrequency: String, Codable, CaseIterable {
         case notSelected = "Select"; case sedentary = "Sedentary (little to no exercise)"
-        case lightlyActive = "Lightly active (1–2 days/week)"; case moderatelyActive = "Moderately active (3–4 days/week)"
+        case lightlyActive = "Lightly active (1-2 days/week)"; case moderatelyActive = "Moderately active (3-4 days/week)"
         case veryActive = "Very active (5+ days/week)"; case athlete = "Competitive athlete"
     }
     enum ExerciseType: String, Codable, CaseIterable {
@@ -158,7 +166,7 @@ struct FitnessBackground: Codable {
     }
 }
 
-// MARK: - Supabase Row (for encoding/decoding)
+// MARK: - Supabase Row
 
 private struct PARQRow: Codable {
     let id:          String
@@ -168,16 +176,16 @@ private struct PARQRow: Codable {
     let requestedAt: Date
     let submittedAt: Date?
     let status:      String
-    let answers:     String      // JSON string
-    let fitnessBackground: String? // JSON string
+    let answers:     String
+    let fitnessBackground: String?
 
     enum CodingKeys: String, CodingKey {
         case id, status, answers
-        case trainerId        = "trainer_id"
-        case clientId         = "client_id"
-        case clientName       = "client_name"
-        case requestedAt      = "requested_at"
-        case submittedAt      = "submitted_at"
+        case trainerId         = "trainer_id"
+        case clientId          = "client_id"
+        case clientName        = "client_name"
+        case requestedAt       = "requested_at"
+        case submittedAt       = "submitted_at"
         case fitnessBackground = "fitness_background"
     }
 }
@@ -187,6 +195,12 @@ private struct PARQRow: Codable {
 class PARQStore: ObservableObject {
     static let shared = PARQStore()
     @Published var forms: [PARQForm] = []
+    private var lastFetchTime: Date = .distantPast
+    private var isFetching = false
+
+    // UPDATE THIS if you change the key in PushNotificationManager
+    private let oneSignalApiKey = "os_v2_app_blw7lbncvndivcn7cfn2f5poy2xi3nlgatcus5f6nrel2ewjlbmm4rtuvfq3wvrvp2sh2d55gvhbv4gicphau44qy4oaaw5zjwqy6sq"
+    private let oneSignalAppId  = "0aedf585-a2ab-468a-89bf-115ba2f5eec6"
 
     private var localURL: URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -201,61 +215,84 @@ class PARQStore: ObservableObject {
     // MARK: - Queries
 
     func forms(forClient id: String) -> [PARQForm] {
-        forms.filter { $0.clientId == id }.sorted { $0.requestedAt > $1.requestedAt }
+        let normalized = id.uppercased()
+        return forms.filter { $0.clientId.uppercased() == normalized }.sorted { $0.requestedAt > $1.requestedAt }
     }
     func forms(forTrainer id: String) -> [PARQForm] {
         forms.filter { $0.trainerId == id }.sorted { $0.requestedAt > $1.requestedAt }
     }
     func latestForm(forClient id: String) -> PARQForm? { forms(forClient: id).first }
+
+    // For trainer view: check by specific trainer
     func pendingForm(forClient id: String, trainerId: String) -> PARQForm? {
-        forms.first { $0.clientId == id && $0.trainerId == trainerId && $0.status == .pending }
+        forms.first { $0.clientId == id && $0.status == .pending }
     }
+    // For client view: any pending form regardless of which trainer
+    func anyPendingForm(forClient id: String) -> PARQForm? {
+        forms.first { $0.clientId == id && $0.status == .pending }
+    }
+
     func loadForClient(_ clientId: String)  { Task { await fetchFromSupabase() } }
     func loadForTrainer(_ trainerId: String) { Task { await fetchFromSupabase() } }
 
     // MARK: - Actions
 
     func requestForm(trainerId: String, clientId: String, clientName: String) {
-        guard pendingForm(forClient: clientId, trainerId: trainerId) == nil else { return }
+        // Check Supabase first, not just local cache
         let form = PARQForm(trainerId: trainerId, clientId: clientId, clientName: clientName)
-        forms.insert(form, at: 0)
-        save()
-        Task { await saveToSupabase(form) }
-        NotificationManager.shared.send(
-            recipientId: clientId, recipientRole: .client,
-            senderId: trainerId, senderName: "Your Trainer",
-            category: .message,
-            title: "PAR-Q Health Form Requested",
-            body: "Your trainer has requested you complete a Physical Activity Readiness Questionnaire."
-        )
+        // Only add locally if not already there
+        if anyPendingForm(forClient: clientId) == nil {
+            forms.insert(form, at: 0)
+            save()
+        }
+        Task {
+            // Always try to save to Supabase
+            await saveToSupabase(form)
+            // Send OneSignal push to client
+            if let clients = try? await supabase.from("clients").select()
+                .eq("id", value: clientId).execute().value as [ClientRow],
+               let client = clients.first,
+               let authId = client.authId?.uuidString.uppercased() {
+                await sendOneSignalPush(
+                    toAuthId: authId,
+                    title: "PAR-Q Health Form Requested",
+                    body: "Your trainer has requested you complete a health questionnaire. Open the app to fill it out.",
+                    data: ["action": "parq_request", "trainer_id": trainerId]
+                )
+                print("✅ PAR-Q request push sent to client: \(authId)")
+            } else {
+                print("⚠️ PAR-Q push: could not find client auth_id for clientId: \(clientId)")
+            }
+        }
     }
 
-    func submit(_ form: PARQForm) {
+    func submit(_ form: PARQForm, clientName: String? = nil) {
         var updated         = form
         updated.status      = .completed
         updated.submittedAt = Date()
+        // Use provided name override if the form's name is missing
+        if let name = clientName, !name.isEmpty {
+            updated.clientName = name
+        }
         upsert(updated)
-        Task { await saveToSupabase(updated) }
-
-        NotificationManager.shared.send(
-            recipientId: form.clientId, recipientRole: .client,
-            senderId: form.trainerId, senderName: "TrainerMatch",
-            category: .checkIn,
-            title: "PAR-Q Submitted ✓",
-            body: updated.hasConcerns
-                ? "Form submitted. \(updated.flaggedAnswers.count) concern(s) flagged for your trainer."
-                : "Your PAR-Q form was submitted successfully. No concerns flagged."
-        )
         Task {
-            guard let trainers = try? await SupabaseAuthManager.shared.fetchAllTrainers(),
-                  let trainer  = trainers.first(where: { $0.id.uuidString == form.trainerId }),
-                  let authId   = trainer.authId?.uuidString.uppercased() else { return }
-            let title = "\(form.clientName) completed their PAR-Q"
-            let body  = updated.hasConcerns
-                ? "⚠️ \(updated.flaggedAnswers.count) concern(s) flagged — review required."
-                : "✓ No health concerns flagged."
-            await sendOneSignalPush(toAuthId: authId, title: title, body: body,
-                                    data: ["action": "parq_review", "client_id": form.clientId])
+            await saveToSupabase(updated)
+            // Notify trainer via OneSignal
+            if let trainers = try? await SupabaseAuthManager.shared.fetchAllTrainers(),
+               let trainer  = trainers.first(where: { $0.id.uuidString == form.trainerId }),
+               let authId   = trainer.authId?.uuidString.uppercased() {
+                let title = "\(form.clientName) completed their PAR-Q"
+                let body  = updated.hasConcerns
+                    ? "⚠️ \(updated.flaggedAnswers.count) concern(s) flagged — review required."
+                    : "✓ No health concerns flagged."
+                await sendOneSignalPush(
+                    toAuthId: authId,
+                    title: title,
+                    body: body,
+                    data: ["action": "parq_review", "client_id": form.clientId]
+                )
+                print("✅ PAR-Q submission push sent to trainer: \(authId)")
+            }
         }
     }
 
@@ -269,6 +306,7 @@ class PARQStore: ObservableObject {
     // MARK: - Supabase Save
 
     private func saveToSupabase(_ form: PARQForm) async {
+        print("💾 Saving PAR-Q to Supabase: \(form.id) status=\(form.status.rawValue)")
         do {
             let answersData = try JSONEncoder().encode(form.answers)
             let answersStr  = String(data: answersData, encoding: .utf8) ?? "[]"
@@ -298,6 +336,12 @@ class PARQStore: ObservableObject {
     // MARK: - Supabase Fetch
 
     func fetchFromSupabase() async {
+        // Debounce: skip if fetched in last 2 seconds or already fetching
+        let now = Date()
+        guard !isFetching && now.timeIntervalSince(lastFetchTime) > 2.0 else { return }
+        isFetching = true
+        lastFetchTime = now
+        defer { isFetching = false }
         do {
             let rows: [PARQRow] = try await supabase
                 .from("parq_forms")
@@ -316,6 +360,8 @@ class PARQStore: ObservableObject {
                     clientId:   row.clientId,
                     clientName: row.clientName
                 )
+                form.id          = row.id   // ← preserve Supabase ID so merge works correctly
+                form.requestedAt = row.requestedAt
                 form.submittedAt = row.submittedAt
                 form.status      = PARQForm.PARQStatus(rawValue: row.status) ?? .pending
                 if let answersData = row.answers.data(using: .utf8),
@@ -331,13 +377,12 @@ class PARQStore: ObservableObject {
             }
 
             await MainActor.run {
-                // Merge: keep local-only forms, update/add from Supabase
-                var merged = self.forms
-                for sbForm in fetched {
-                    if let idx = merged.firstIndex(where: { $0.id == sbForm.id }) {
-                        merged[idx] = sbForm
-                    } else {
-                        merged.append(sbForm)
+                // Supabase is source of truth — replace all forms with fetched data
+                // Keep any local-only forms not yet synced
+                var merged = fetched
+                for localForm in self.forms {
+                    if !merged.contains(where: { $0.id == localForm.id }) {
+                        merged.append(localForm)
                     }
                 }
                 self.forms = merged.sorted { $0.requestedAt > $1.requestedAt }
@@ -349,25 +394,30 @@ class PARQStore: ObservableObject {
         }
     }
 
-    // MARK: - OneSignal Push
+    // MARK: - OneSignal Push (uses external_id targeting)
 
     private func sendOneSignalPush(toAuthId: String, title: String, body: String, data: [String: String] = [:]) async {
-        guard let url = URL(string: "https://onesignal.com/api/v1/notifications") else { return }
+        guard let url = URL(string: "https://api.onesignal.com/notifications") else { return }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("os_v2_app_blw7lbncvndivcn7cfn2f5poy2xi3nlgatcus5f6nrel2ewjlbmm4rtuvfq3wvrvp2sh2d55gvhbv4gicphau44qy4oaaw5zjwqy6sq", forHTTPHeaderField: "Authorization")
+        request.setValue(oneSignalApiKey, forHTTPHeaderField: "Authorization")
         let payload: [String: Any] = [
-            "app_id": "0aedf585-a2ab-468a-89bf-115ba2f5eec6",
-            "include_external_user_ids": [toAuthId],
-            "headings": ["en": title], "contents": ["en": body],
-            "data": data, "ios_sound": "default"
+            "app_id": oneSignalAppId,
+            "include_aliases": ["external_id": [toAuthId]],
+            "target_channel": "push",
+            "headings": ["en": title],
+            "contents": ["en": body],
+            "data": data,
+            "ios_sound": "default"
         ]
         do {
             request.httpBody = try JSONSerialization.data(withJSONObject: payload)
             let (responseData, _) = try await URLSession.shared.data(for: request)
-            print("📲 PAR-Q push → \(toAuthId): \(String(data: responseData, encoding: .utf8) ?? "")")
-        } catch { print("❌ PAR-Q push failed: \(error)") }
+            print("📲 PAR-Q push -> \(toAuthId): \(String(data: responseData, encoding: .utf8) ?? "")")
+        } catch {
+            print("❌ PAR-Q push failed: \(error)")
+        }
     }
 
     // MARK: - Local cache
@@ -530,7 +580,7 @@ struct ClientPARQFormView: View {
             riskSummaryCard
             if flaggedCount > 0 {
                 VStack(alignment: .leading, spacing: 10) {
-                    sectionLabel("⚠️ FLAGGED CONCERNS (\(flaggedCount))")
+                    sectionLabel("FLAGGED CONCERNS (\(flaggedCount))")
                     ForEach(answers.filter { $0.isFlagged }) { answer in
                         HStack(alignment: .top, spacing: 10) {
                             Image(systemName: answer.question.icon).foregroundColor(.orange).frame(width: 20)
@@ -571,7 +621,7 @@ struct ClientPARQFormView: View {
 
     private var riskSummaryCard: some View {
         let risk = computeRiskLevel()
-        let msg  = flaggedCount == 0 ? "No health concerns identified. You're cleared to begin."
+        let msg  = flaggedCount == 0 ? "No health concerns identified. You are cleared to begin."
                                      : "\(flaggedCount) concern(s) will be flagged for your trainer."
         return HStack(spacing: 14) {
             Image(systemName: risk.icon).font(.system(size: 32)).foregroundColor(risk.color)
@@ -643,11 +693,15 @@ struct ClientPARQFormView: View {
         return .high
     }
 
+    @State private var isSubmitting = false
     private func submitForm() {
+        guard !isSubmitting else { return }
+        isSubmitting = true
         var updated               = form
         updated.answers           = answers
         updated.fitnessBackground = background
-        store.submit(updated)
+        // Pass client name from form — will be used if stored name is empty
+        store.submit(updated, clientName: form.clientName.isEmpty ? nil : form.clientName)
         onSubmit()
         dismiss()
     }
@@ -681,7 +735,7 @@ struct PARQQuestionCard: View {
             if answer.response == .yes {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(answer.question.detailPrompt).font(.caption2).foregroundColor(.orange.opacity(0.8))
-                    TextField("Optional — add details...", text: Binding(
+                    TextField("Optional -- add details...", text: Binding(
                         get: { answer.detail ?? "" },
                         set: { answer.detail = $0.isEmpty ? nil : $0 }
                     ), axis: .vertical)
@@ -803,11 +857,11 @@ struct TrainerPARQSummaryCard: View {
     let clientId:   String
     let clientName: String
     @ObservedObject private var store = PARQStore.shared
-    @State private var showingForm:   PARQForm? = nil
-    @State private var showingRequest = false
+    @State private var showingForm:    PARQForm? = nil
+    @State private var showingRequest  = false
 
     private var latest:  PARQForm? { store.latestForm(forClient: clientId) }
-    private var pending: Bool { store.pendingForm(forClient: clientId, trainerId: trainerId) != nil }
+    private var pending: Bool { store.anyPendingForm(forClient: clientId) != nil }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -834,21 +888,22 @@ struct TrainerPARQSummaryCard: View {
             Button("Send Request") { store.requestForm(trainerId: trainerId, clientId: clientId, clientName: clientName) }
             Button("Cancel", role: .cancel) { }
         }
-        .onAppear { store.loadForClient(clientId) }
+        .onAppear {
+            // Fetch fresh data so trainer sees latest submission
+            Task { await store.fetchFromSupabase() }
+        }
     }
 
     private func submittedCard(_ form: PARQForm) -> some View {
         let strokeColor: Color = form.hasConcerns ? Color.orange.opacity(0.3) : Color.white.opacity(0.07)
-        let fillColor: Color   = Color.white.opacity(0.04)
-        let radius: CGFloat    = 12
         return Button(action: { showingForm = form }) {
             VStack(spacing: 10) {
                 submittedCardHeader(form)
                 if form.hasConcerns { submittedCardConcerns(form) }
             }
             .padding(12)
-            .background(RoundedRectangle(cornerRadius: radius).fill(fillColor))
-            .overlay(RoundedRectangle(cornerRadius: radius).stroke(strokeColor, lineWidth: 1))
+            .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.04)))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(strokeColor, lineWidth: 1))
         }
         .buttonStyle(.plain)
     }
@@ -881,7 +936,7 @@ struct TrainerPARQSummaryCard: View {
                 }
             }
             if form.flaggedAnswers.count > 2 {
-                Text("+\(form.flaggedAnswers.count - 2) more concerns — tap to view all")
+                Text("+\(form.flaggedAnswers.count - 2) more concerns -- tap to view all")
                     .font(.caption2).foregroundColor(.white.opacity(0.35))
             }
         }
@@ -891,7 +946,7 @@ struct TrainerPARQSummaryCard: View {
     private var pendingCard: some View {
         HStack(spacing: 10) {
             Image(systemName: "clock.fill").foregroundColor(.tmGold.opacity(0.5))
-            Text("PAR-Q requested — awaiting client response").font(.caption).foregroundColor(.white.opacity(0.4))
+            Text("PAR-Q requested -- awaiting client response").font(.caption).foregroundColor(.white.opacity(0.4))
             Spacer()
         }
         .padding(12)
@@ -933,7 +988,7 @@ struct TrainerPARQReviewView: View {
                     riskBanner
                     if form.hasConcerns {
                         VStack(alignment: .leading, spacing: 10) {
-                            sectionLabel("⚠️ FLAGGED CONCERNS (\(form.flaggedAnswers.count))")
+                            sectionLabel("FLAGGED CONCERNS (\(form.flaggedAnswers.count))")
                             ForEach(form.flaggedAnswers) { answer in concernCard(answer) }
                         }
                     }
@@ -964,7 +1019,7 @@ struct TrainerPARQReviewView: View {
                 .padding(20)
             }
         }
-        .navigationTitle("PAR-Q — \(form.clientName)").navigationBarTitleDisplayMode(.inline)
+        .navigationTitle("PAR-Q -- \(form.clientName)").navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Color.black, for: .navigationBar).toolbarBackground(.visible, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
         .toolbar {
@@ -978,19 +1033,17 @@ struct TrainerPARQReviewView: View {
     }
 
     private var riskBanner: some View {
-        let fill   = form.riskLevel.color.opacity(0.08)
-        let stroke = form.riskLevel.color.opacity(0.3)
-        return HStack(spacing: 14) {
+        HStack(spacing: 14) {
             Image(systemName: form.riskLevel.icon).font(.system(size: 36)).foregroundColor(form.riskLevel.color)
             VStack(alignment: .leading, spacing: 4) {
                 Text(form.riskLevel.label).font(.system(size: 20, weight: .black)).foregroundColor(form.riskLevel.color)
-                Text(form.hasConcerns ? "\(form.flaggedAnswers.count) concern(s) flagged — review below" : "No health concerns identified")
+                Text(form.hasConcerns ? "\(form.flaggedAnswers.count) concern(s) flagged -- review below" : "No health concerns identified")
                     .font(.subheadline).foregroundColor(.white.opacity(0.6))
             }
         }
         .padding(18).frame(maxWidth: .infinity, alignment: .leading)
-        .background(RoundedRectangle(cornerRadius: 16).fill(fill))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(stroke, lineWidth: 1.5))
+        .background(RoundedRectangle(cornerRadius: 16).fill(form.riskLevel.color.opacity(0.08)))
+        .overlay(RoundedRectangle(cornerRadius: 16).stroke(form.riskLevel.color.opacity(0.3), lineWidth: 1.5))
     }
 
     private func concernCard(_ answer: PARQAnswer) -> some View {
@@ -1076,7 +1129,8 @@ struct ClientPARQHubSection: View {
     @ObservedObject private var store = PARQStore.shared
     @State private var showingForm: PARQForm? = nil
 
-    private var pending: PARQForm? { store.pendingForm(forClient: clientId, trainerId: trainerId) }
+    // Uses anyPendingForm so client sees the request regardless of trainer ID matching
+    private var pending: PARQForm? { store.anyPendingForm(forClient: clientId) }
     private var latest:  PARQForm? { store.latestForm(forClient: clientId) }
 
     var body: some View {

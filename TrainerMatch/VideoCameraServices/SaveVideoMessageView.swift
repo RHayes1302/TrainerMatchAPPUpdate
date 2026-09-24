@@ -90,7 +90,7 @@ struct SaveVideoMessageView: View {
                                 Text("Message")
                                     .font(.subheadline).fontWeight(.semibold).foregroundColor(.tmGold)
                                 TextEditor(text: $message)
-                                    .foregroundColor(.white)
+                                    .foregroundColor(.black)
                                     .frame(height: 120)
                                     .padding(8)
                                     .background(Color.white.opacity(0.05))

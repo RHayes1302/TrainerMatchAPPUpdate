@@ -29,7 +29,7 @@ struct FirstLaunchDisclaimerView: View {
                         TrainerMatchLogo(size: .large)
                             .shadow(color: .tmGold.opacity(0.4), radius: 20, x: 0, y: 10)
                             .padding(.top, 60)
-                        Text("TrainerMatch")
+                        Text("Nearby Trainers")
                             .font(.system(size: 32, weight: .heavy)).italic()
                             .foregroundColor(.white)
                         Text("Local Trainers, Real Results")
@@ -63,7 +63,7 @@ struct FirstLaunchDisclaimerView: View {
                                 .foregroundColor(.orange)
                         }
 
-                        Text("TrainerMatch is a technology platform that connects clients with independent personal trainers. We do not employ, supervise, or control any trainer listed on this platform.")
+                        Text("Nearby Trainers is a technology platform that connects clients with independent personal trainers. We do not employ, supervise, or control any trainer listed on this platform.")
                             .font(.caption).foregroundColor(.gray)
 
                         Text("Participation in any fitness program, session, or activity arranged through TrainerMatch is entirely at your own risk. TrainerMatch, its owners, operators, and affiliates are NOT responsible for any injury, death, property damage, or harm of any kind that occurs in connection with any trainer or activity found on this platform.")

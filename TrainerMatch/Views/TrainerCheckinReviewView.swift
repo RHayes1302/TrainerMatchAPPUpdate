@@ -28,9 +28,10 @@ struct IdentifiableURL: Identifiable {
 // MARK: - Main Review View
 
 struct TrainerCheckInReviewView: View {
-    let trainerId:  String
-    let clientId:   String
-    let clientName: String
+    let trainerId:   String
+    let clientId:    String
+    let clientName:  String
+    let trainerName: String
 
     @State private var checkIns: [CheckInRow] = []
     @State private var filter: FilterMode = .pending
@@ -110,9 +111,10 @@ struct TrainerCheckInReviewView: View {
         .sheet(item: $selectedCheckIn) { checkIn in
             NavigationView {
                 TrainerCheckInDetailView(
-                    checkIn:    checkIn,
-                    clientName: clientName,
-                    onReviewed: { await loadCheckIns() }
+                    checkIn:     checkIn,
+                    clientName:  clientName,
+                    trainerName: trainerName,
+                    onReviewed:  { await loadCheckIns() }
                 )
             }
             .tint(.tmGold)
@@ -248,9 +250,10 @@ struct CITrainerCard: View {
 // MARK: - Detail View
 
 struct TrainerCheckInDetailView: View {
-    let checkIn:    CheckInRow
-    let clientName: String
-    let onReviewed: () async -> Void
+    let checkIn:     CheckInRow
+    let clientName:  String
+    let trainerName: String
+    let onReviewed:  () async -> Void
 
     @Environment(\.dismiss) var dismiss
     @State private var reviewNote  = ""
@@ -467,7 +470,7 @@ struct TrainerCheckInDetailView: View {
 
                 PushNotificationManager.shared.sendTrainerAcceptedNotification(
                     toClientId:  checkIn.clientId.uuidString,
-                    trainerName: "Your Trainer"
+                    trainerName: trainerName
                 )
 
                 await MainActor.run { isSaving = false; showSuccess = true }

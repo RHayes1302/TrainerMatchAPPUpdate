@@ -320,7 +320,7 @@ struct TrainerRequestButton: View {
                 }
                 .padding(.vertical, 8)
                 .sheet(isPresented: $showingLogin) {
-                    LoginView().environmentObject(AuthManager.shared)
+                    SupabaseLoginView()
                 }
                 .sheet(isPresented: $showingSignup) {
                     NavigationView { ClientSignupView().environmentObject(AuthManager.shared) }

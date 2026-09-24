@@ -74,7 +74,7 @@ struct AddProgressEntryWithPhotosView: View {
                                 .frame(height: 100)
                                 .scrollContentBackground(.hidden)
                                 .background(Color.clear)
-                                .foregroundColor(.white)
+                                .foregroundColor(.black)
                                 .overlay(
                                     Group {
                                         if notes.isEmpty {

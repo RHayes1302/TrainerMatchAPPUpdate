@@ -14,6 +14,7 @@ struct ClientVideoMessagesView: View {
     @State private var selectedMessage: VideoMessage?
     @State private var showingPlayer = false
     @State private var filterType: VideoMessage.MessageType?
+    @State private var isLoading = false
 
     var filteredMessages: [VideoMessage] {
         let messages = viewModel.getMessages(for: clientId)
@@ -36,12 +37,16 @@ struct ClientVideoMessagesView: View {
                                 .font(.subheadline).foregroundColor(.tmGold)
                         }
                         Spacer()
-                        let unviewed = viewModel.getUnviewedCount(for: clientId)
-                        if unviewed > 0 {
-                            Text("\(unviewed)")
-                                .font(.caption).fontWeight(.bold).foregroundColor(.black)
-                                .padding(.horizontal, 10).padding(.vertical, 5)
-                                .background(Color.tmGold).cornerRadius(12)
+                        if isLoading {
+                            ProgressView().tint(.tmGold).scaleEffect(0.8)
+                        } else {
+                            let unviewed = viewModel.getUnviewedCount(for: clientId)
+                            if unviewed > 0 {
+                                Text("\(unviewed)")
+                                    .font(.caption).fontWeight(.bold).foregroundColor(.black)
+                                    .padding(.horizontal, 10).padding(.vertical, 5)
+                                    .background(Color.tmGold).cornerRadius(12)
+                            }
                         }
                     }
                     .padding(.horizontal).padding(.top)
@@ -66,7 +71,7 @@ struct ClientVideoMessagesView: View {
                 .background(Color.white.opacity(0.05))
 
                 // List
-                if filteredMessages.isEmpty {
+                if filteredMessages.isEmpty && !isLoading {
                     VStack(spacing: 16) {
                         Image(systemName: "video.slash")
                             .font(.system(size: 60)).foregroundColor(.white.opacity(0.3))
@@ -96,6 +101,13 @@ struct ClientVideoMessagesView: View {
             }
         }
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            isLoading = true
+            Task {
+                await viewModel.fetchMessagesForClient(clientId)
+                await MainActor.run { isLoading = false }
+            }
+        }
         .sheet(isPresented: $showingPlayer) {
             if let msg = selectedMessage {
                 VideoMessagePlayerView(message: msg, onClose: { showingPlayer = false })

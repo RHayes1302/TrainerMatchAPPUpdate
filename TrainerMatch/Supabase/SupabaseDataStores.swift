@@ -21,6 +21,9 @@ struct WorkoutRow: Codable, Identifiable {
     var difficulty:      String
     var estimatedMins:   Int
     var status:          String
+    var muscleGroup:     String?
+    var dayNumber:       Int?
+    var isRestDay:       Bool?
     var assignedDate:    Date?
     var dueDate:         Date?
     var completedAt:     Date?
@@ -31,6 +34,9 @@ struct WorkoutRow: Codable, Identifiable {
         case trainerId     = "trainer_id"
         case clientId      = "client_id"
         case estimatedMins = "estimated_mins"
+        case muscleGroup   = "muscle_group"
+        case dayNumber     = "day_number"
+        case isRestDay     = "is_rest_day"
         case assignedDate  = "assigned_date"
         case dueDate       = "due_date"
         case completedAt   = "completed_at"
@@ -75,6 +81,31 @@ class SBWorkoutStore: ObservableObject {
         workouts.insert(workout, at: 0)
     }
 
+    // Call this ONCE before saving a full program to clear old workouts
+    func replaceProgram(_ newWorkouts: [WorkoutRow]) async throws {
+        guard let first = newWorkouts.first else { return }
+        // Cache existing
+        let existing = workouts.filter {
+            $0.clientId == first.clientId && $0.trainerId == first.trainerId
+        }
+        if !existing.isEmpty {
+            TrainerLocalCache.shared.saveWorkoutProgram(existing,
+                clientId: first.clientId.uuidString,
+                trainerId: first.trainerId.uuidString)
+            try await supabase.from("workouts")
+                .delete()
+                .eq("client_id", value: first.clientId)
+                .eq("trainer_id", value: first.trainerId)
+                .execute()
+            workouts.removeAll { $0.clientId == first.clientId && $0.trainerId == first.trainerId }
+        }
+        // Insert all new workouts
+        for workout in newWorkouts {
+            try await supabase.from("workouts").insert(workout).execute()
+            workouts.insert(workout, at: 0)
+        }
+    }
+
     func update(_ workout: WorkoutRow) async throws {
         try await supabase.from("workouts").update(workout)
             .eq("id", value: workout.id).execute()
@@ -117,7 +148,7 @@ struct MealPlanRow: Codable, Identifiable {
     var proteinG:      Double
     var carbsG:        Double
     var fatG:          Double
-    var weekStart:     Date?
+    var weekStart:     String? // date-only string e.g. '2026-07-07'
     var isActive:      Bool
     var createdAt:     Date?
 
@@ -153,15 +184,53 @@ class SBMealPlanStore: ObservableObject {
     private init() {}
 
     func fetchForClient(_ clientId: UUID) async throws {
-        mealPlans = try await supabase
-            .from("meal_plans").select()
-            .eq("client_id", value: clientId)
-            .eq("is_active", value: true)
-            .order("created_at", ascending: false)
-            .execute().value
+        var result: [MealPlanRow] = []
+        do {
+            result = try await supabase
+                .from("meal_plans").select()
+                .eq("client_id", value: clientId)
+                .order("created_at", ascending: false)
+                .execute().value
+        } catch {
+            print("❌ meal plan fetch error: \(error)")
+        }
+        // Fallback: look up row id via auth_id
+        if result.isEmpty {
+            struct ClientRow: Decodable {
+                let id: UUID
+                enum CodingKeys: String, CodingKey { case id }
+            }
+            if let rows = try? await supabase
+                .from("clients").select("id")
+                .eq("auth_id", value: clientId)
+                .execute().value as [ClientRow],
+               let rowId = rows.first?.id {
+                result = (try? await supabase
+                    .from("meal_plans").select()
+                    .eq("client_id", value: rowId)
+                    .order("created_at", ascending: false)
+                    .execute().value) ?? []
+            }
+        }
+        mealPlans = result
     }
 
     func create(_ plan: MealPlanRow) async throws {
+        // Cache existing meal plans locally before deleting from Supabase
+        let existing = mealPlans.filter {
+            $0.clientId == plan.clientId && $0.trainerId == plan.trainerId
+        }
+        if !existing.isEmpty {
+            TrainerLocalCache.shared.saveMealPlanHistory(existing,
+                clientId: plan.clientId.uuidString,
+                trainerId: plan.trainerId.uuidString)
+            // Delete old meal plans from Supabase
+            try await supabase.from("meal_plans")
+                .delete()
+                .eq("client_id", value: plan.clientId)
+                .eq("trainer_id", value: plan.trainerId)
+                .execute()
+        }
         try await supabase.from("meal_plans").insert(plan).execute()
         mealPlans.insert(plan, at: 0)
     }

@@ -26,6 +26,7 @@ struct ClientFolderView: View {
     @State private var showingVideoMessages   = false
     @State private var showingVideoCallInvite = false
     @State private var showingLiveCall        = false
+    @State private var showingShareFile        = false
 
     private var trainerId: String {
         SupabaseAuthManager.shared.currentTrainer?.id.uuidString
@@ -389,13 +390,14 @@ struct ClientFolderView: View {
     }
 
     private var checkInsTab: some View {
-        TrainerCheckInReviewView(trainerId: trainerId, clientId: client.id, clientName: client.name)
+        TrainerCheckInReviewView(trainerId: trainerId, clientId: client.id, clientName: client.name, trainerName: trainerName)
     }
 
     private var filesTab: some View {
-        TrainerSharedFilesSection(
-            trainerId: trainerId, clientId: client.id,
-            clientName: client.name, onShareFile: {})
+        TrainerFilesSection(
+            trainerId: trainerId,
+            clientId: client.id,
+            clientName: client.name)
     }
 
     private func initials(_ name: String) -> String {

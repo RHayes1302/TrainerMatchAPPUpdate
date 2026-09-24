@@ -694,14 +694,47 @@ struct TrainerClientWorkoutsView: View {
 
 struct ClientWorkoutsSection: View {
     let clientId: String; let clientName: String; let trainerId: String
+    @Binding var selectedWorkout: WorkoutRow?
     @ObservedObject private var store = SBWorkoutStore.shared
-    private var workouts: [WorkoutRow] { store.workouts.filter { $0.clientId.uuidString == clientId } }
-    private var pending: [WorkoutRow] { workouts.filter { $0.status == "assigned" } }
+    @State private var isLoading = false
+    @State private var expandedProgram: String? = nil
+
+    private var workouts: [WorkoutRow] {
+        store.workouts.filter { $0.clientId.uuidString.uppercased() == clientId.uppercased() }
+    }
+
+    // Group workouts by program (same createdAt minute = same program)
+    private var programs: [(String, [WorkoutRow])] {
+        let cal = Calendar.current
+        let grouped = Dictionary(grouping: workouts) { w -> String in
+            guard let date = w.createdAt else { return "unknown" }
+            let comps = cal.dateComponents([.year, .month, .day, .hour, .minute], from: date)
+            return "\(comps.year ?? 0)-\(comps.month ?? 0)-\(comps.day ?? 0)-\(comps.hour ?? 0)-\(comps.minute ?? 0)"
+        }
+        return grouped
+            .map { key, days in (key, days.sorted { ($0.dayNumber ?? 0) < ($1.dayNumber ?? 0) }) }
+            .sorted { $0.1.first?.createdAt ?? .distantPast > $1.1.first?.createdAt ?? .distantPast }
+    }
+
+    private var pending:   [WorkoutRow] { workouts.filter { $0.status == "assigned" } }
+    private var completed: [WorkoutRow] { workouts.filter { $0.status == "completed" } }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Workouts").font(.title2).fontWeight(.bold).foregroundColor(.white)
-            if workouts.isEmpty {
+            HStack(spacing: 0) {
+                wkStat("\(workouts.count)", "Total")
+                Divider().background(Color.white.opacity(0.08)).frame(height: 30)
+                wkStat("\(pending.count)", "Pending")
+                Divider().background(Color.white.opacity(0.08)).frame(height: 30)
+                wkStat("\(completed.count)", "Done")
+            }
+            .padding(.vertical, 10)
+            .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.04)))
+
+            if isLoading {
+                HStack { Spacer(); ProgressView().tint(.tmGold); Spacer() }.padding(.vertical, 20)
+            } else if workouts.isEmpty {
                 VStack(spacing: 12) {
                     Image(systemName: "dumbbell").font(.system(size: 40)).foregroundColor(.tmGold.opacity(0.2))
                     Text("No workouts assigned yet").font(.subheadline).foregroundColor(.white.opacity(0.4))
@@ -711,18 +744,29 @@ struct ClientWorkoutsSection: View {
                 .frame(maxWidth: .infinity).padding(.vertical, 24)
                 .background(RoundedRectangle(cornerRadius: 16).fill(Color.white.opacity(0.03)))
             } else {
-                HStack(spacing: 0) {
-                    wkStat("\(workouts.count)", "Total")
-                    Divider().background(Color.white.opacity(0.08)).frame(height: 30)
-                    wkStat("\(pending.count)", "Pending")
-                    Divider().background(Color.white.opacity(0.08)).frame(height: 30)
-                    wkStat("\(workouts.filter { $0.status == "completed" }.count)", "Done")
+                VStack(spacing: 12) {
+                    ForEach(programs, id: \.0) { key, days in
+                        WeeklyProgramCard(
+                            days: days,
+                            isExpanded: expandedProgram == key,
+                            onTap: { expandedProgram = expandedProgram == key ? nil : key },
+                            onSelectWorkout: { workout in
+                                if workout.isRestDay != true { selectedWorkout = workout }
+                            }
+                        )
+                    }
                 }
-                .padding(.vertical, 10)
-                .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.04)))
-                ForEach(workouts.prefix(5)) { w in SBWorkoutRow(workout: w, isTrainerView: false) }
             }
-        }.onAppear { store.loadForClient(clientId) }
+        }
+        .onAppear {
+            guard let uuid = UUID(uuidString: clientId) else { return }
+            isLoading = true
+            Task {
+                try? await store.fetchForClient(uuid)
+                await MainActor.run { isLoading = false }
+            }
+        }
+
     }
 
     private func wkStat(_ value: String, _ label: String) -> some View {
@@ -730,6 +774,384 @@ struct ClientWorkoutsSection: View {
             Text(value).font(.system(size: 16, weight: .black)).foregroundColor(.tmGold)
             Text(label).font(.system(size: 9)).foregroundColor(.white.opacity(0.4))
         }.frame(maxWidth: .infinity)
+    }
+    private func sectionLabel(_ title: String, icon: String, color: Color) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon).font(.caption).foregroundColor(color)
+            Text(title).font(.system(size: 10, weight: .bold)).tracking(1.2).foregroundColor(color)
+        }
+    }
+}
+
+// MARK: - WorkoutDetailSheet
+
+struct WorkoutDetailSheet: View {
+    let workout: WorkoutRow
+    let onMarkComplete: () -> Void
+    @Environment(\.dismiss) var dismiss
+    @State private var isCompleting  = false
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            VStack(spacing: 0) {
+                HStack {
+                    Button(action: { dismiss() }) {
+                        Image(systemName: "xmark.circle.fill").font(.title2).foregroundColor(.white.opacity(0.4))
+                    }
+                    Spacer()
+                    Text(workout.title).font(.headline).fontWeight(.bold).foregroundColor(.white)
+                    Spacer()
+                    Button(action: { shareWorkout() }) {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.system(size: 16, weight: .semibold)).foregroundColor(.tmGold)
+                    }
+                }
+                .padding(20)
+
+                HStack(spacing: 20) {
+                    metaItem(icon: "dumbbell.fill", value: "\(workout.exercises.count) exercises")
+                    metaItem(icon: "clock.fill",    value: "\(workout.estimatedMins) min")
+                    metaItem(icon: "chart.bar.fill", value: workout.difficulty.capitalized)
+                    if let mg = workout.muscleGroup, !mg.isEmpty {
+                        metaItem(icon: "figure.strengthtraining.traditional", value: mg)
+                    }
+                }
+                .padding(.horizontal, 20).padding(.bottom, 16)
+
+                if !workout.description.isEmpty {
+                    Text(workout.description).font(.subheadline).foregroundColor(.white.opacity(0.6))
+                        .padding(.horizontal, 20).padding(.bottom, 12)
+                }
+
+                Divider().background(Color.white.opacity(0.08))
+
+                ScrollView {
+                    VStack(spacing: 10) {
+                        ForEach(Array(workout.exercises.enumerated()), id: \.offset) { i, ex in
+                            ExerciseDetailRow(index: i + 1, exercise: ex)
+                        }
+                    }
+                    .padding(20)
+                }
+
+
+            }
+        }
+    }
+
+    private func metaItem(icon: String, value: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon).font(.caption).foregroundColor(.tmGold)
+            Text(value).font(.caption).foregroundColor(.white.opacity(0.7))
+        }
+    }
+
+    private func shareWorkout() {
+        let pdf = generateWorkoutPDF()
+        let av = UIActivityViewController(activityItems: [pdf], applicationActivities: nil)
+        if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let root = scene.windows.first?.rootViewController {
+            var presented = root
+            while let next = presented.presentedViewController { presented = next }
+            presented.present(av, animated: true)
+        }
+    }
+
+    private func generateWorkoutPDF() -> URL {
+        let pageW: CGFloat = 612; let pageH: CGFloat = 792
+        let margin: CGFloat = 48; var y: CGFloat = margin
+        let renderer = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: pageW, height: pageH))
+        let data = renderer.pdfData { ctx in
+            ctx.beginPage()
+            let titleAttr:   [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 24, weight: .black), .foregroundColor: UIColor(red: 0.82, green: 0.69, blue: 0.27, alpha: 1)]
+            let sectionAttr: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 11, weight: .bold), .foregroundColor: UIColor.darkGray]
+            let bodyAttr:    [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 12), .foregroundColor: UIColor.black]
+            let boldAttr:    [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 13, weight: .semibold), .foregroundColor: UIColor.black]
+            let tipsAttr:    [NSAttributedString.Key: Any] = [.font: UIFont.italicSystemFont(ofSize: 11), .foregroundColor: UIColor.darkGray]
+            workout.title.draw(at: CGPoint(x: margin, y: y), withAttributes: titleAttr); y += 36
+            var meta = "\(workout.difficulty.capitalized)  ·  \(workout.estimatedMins) min  ·  \(workout.exercises.count) exercises"
+            if let mg = workout.muscleGroup, !mg.isEmpty { meta += "  ·  \(mg)" }
+            meta.draw(at: CGPoint(x: margin, y: y), withAttributes: sectionAttr); y += 24
+            UIColor.lightGray.setStroke()
+            let line = UIBezierPath(); line.move(to: CGPoint(x: margin, y: y)); line.addLine(to: CGPoint(x: pageW - margin, y: y)); line.lineWidth = 0.5; line.stroke(); y += 16
+            for (i, ex) in workout.exercises.enumerated() {
+                if y > pageH - 100 { ctx.beginPage(); y = margin }
+                "\(i + 1).  \(ex.name)".draw(at: CGPoint(x: margin, y: y), withAttributes: boldAttr); y += 20
+                var detail = "\(ex.sets) sets  ×  \(ex.reps) reps"
+                if !ex.weight.isEmpty { detail += "  @  \(ex.weight)" }
+                if ex.restSeconds > 0 { detail += "  ·  \(ex.restSeconds)s rest" }
+                detail.draw(at: CGPoint(x: margin + 20, y: y), withAttributes: bodyAttr); y += 18
+                if !ex.notes.isEmpty {
+                    if y > pageH - 60 { ctx.beginPage(); y = margin }
+                    let tipsNS = "Tip: \(ex.notes)" as NSString
+                    let maxW = pageW - margin * 2 - 20
+                    tipsNS.draw(in: CGRect(x: margin + 20, y: y, width: maxW, height: 200), withAttributes: tipsAttr)
+                    y += tipsNS.boundingRect(with: CGSize(width: maxW, height: 200), options: .usesLineFragmentOrigin, attributes: tipsAttr, context: nil).height + 4
+                }
+                y += 14
+            }
+        }
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(workout.title.replacingOccurrences(of: " ", with: "_"))_Workout.pdf")
+        try? data.write(to: url); return url
+    }
+}
+
+// MARK: - ExerciseDetailRow
+
+struct ExerciseDetailRow: View {
+    let index: Int; let exercise: ExerciseItem
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Text("\(index)").font(.system(size: 13, weight: .black)).foregroundColor(.black)
+                .frame(width: 28, height: 28).background(Circle().fill(Color.tmGold))
+            VStack(alignment: .leading, spacing: 4) {
+                Text(exercise.name).font(.system(size: 14, weight: .semibold)).foregroundColor(.white)
+                HStack(spacing: 8) {
+                    statChip("\(exercise.sets) sets", .tmGold)
+                    statChip("\(exercise.reps) reps", .blue)
+                    if !exercise.weight.isEmpty && exercise.weight != "0" { statChip(exercise.weight, .orange) }
+                    if exercise.restSeconds > 0 { statChip("\(exercise.restSeconds)s rest", .purple) }
+                }
+                if !exercise.notes.isEmpty {
+                    Text(exercise.notes).font(.caption2).foregroundColor(.white.opacity(0.4)).lineLimit(2)
+                }
+            }
+            Spacer()
+        }
+        .padding(14)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.04))
+            .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.07), lineWidth: 1)))
+    }
+
+    private func statChip(_ label: String, _ color: Color) -> some View {
+        Text(label).font(.system(size: 10, weight: .bold)).foregroundColor(color)
+            .padding(.horizontal, 8).padding(.vertical, 3).background(Capsule().fill(color.opacity(0.12)))
+    }
+}
+
+
+// MARK: - Day Workout Card
+
+struct DayWorkoutCard: View {
+    let workout: WorkoutRow
+    let onTap:   () -> Void
+    @State private var expanded = false
+
+    var isRest: Bool { workout.isRestDay ?? false }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header row
+            Button(action: {
+                if isRest { return }
+                withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() }
+            }) {
+                HStack(spacing: 14) {
+                    // Day badge
+                    VStack(spacing: 2) {
+                        Text("DAY").font(.system(size: 8, weight: .bold)).foregroundColor(.black.opacity(0.6))
+                        Text("\(workout.dayNumber ?? 0)").font(.system(size: 16, weight: .black)).foregroundColor(.black)
+                    }
+                    .frame(width: 44, height: 44)
+                    .background(Circle().fill(isRest ? Color.blue.opacity(0.7) : Color.tmGold))
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 6) {
+                            if isRest {
+                                Image(systemName: "moon.zzz.fill").font(.caption).foregroundColor(.blue.opacity(0.8))
+                            }
+                            Text(workout.title).font(.system(size: 15, weight: .bold)).foregroundColor(.white)
+                        }
+                        if isRest {
+                            Text("Rest & Recovery").font(.caption).foregroundColor(.blue.opacity(0.7))
+                        } else {
+                            HStack(spacing: 6) {
+                                if let mg = workout.muscleGroup, !mg.isEmpty {
+                                    Text(mg).foregroundColor(.tmGold)
+                                    Text("·").foregroundColor(.white.opacity(0.3))
+                                }
+                                Text("\(workout.exercises.count) exercises")
+                                Text("·").foregroundColor(.white.opacity(0.3))
+                                Text("\(workout.estimatedMins) min")
+                            }.font(.caption).foregroundColor(.white.opacity(0.45))
+                        }
+                    }
+
+                    Spacer()
+
+                    if !isRest {
+                        Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 12, weight: .semibold)).foregroundColor(.white.opacity(0.3))
+                    }
+                }
+                .padding(.horizontal, 14).padding(.vertical, 14)
+            }
+            .buttonStyle(.plain)
+
+            // Expanded exercise list
+            if expanded && !isRest {
+                Divider().background(Color.white.opacity(0.06))
+                VStack(spacing: 0) {
+                    ForEach(Array(workout.exercises.enumerated()), id: \.element.id) { i, ex in
+                        HStack(spacing: 12) {
+                            Text("\(i + 1)").font(.system(size: 11, weight: .black)).foregroundColor(.tmGold)
+                                .frame(width: 20, alignment: .center)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(ex.name).font(.system(size: 13, weight: .semibold)).foregroundColor(.white)
+                                HStack(spacing: 6) {
+                                    Text("\(ex.sets) sets · \(ex.reps) reps").font(.caption).foregroundColor(.white.opacity(0.45))
+                                    if !ex.weight.isEmpty { Text("· \(ex.weight)").font(.caption).foregroundColor(.tmGold) }
+                                }
+                            }
+                            Spacer()
+                            if ex.restSeconds > 0 {
+                                Text("\(ex.restSeconds)s").font(.caption2).foregroundColor(.white.opacity(0.3))
+                            }
+                        }
+                        .padding(.horizontal, 14).padding(.vertical, 10)
+                        if i < workout.exercises.count - 1 {
+                            Divider().background(Color.white.opacity(0.04)).padding(.leading, 46)
+                        }
+                    }
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
+
+                // Tap to open full detail
+                Button(action: onTap) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.up.right.circle").font(.caption)
+                        Text("View Full Workout Detail").font(.caption).fontWeight(.semibold)
+                    }
+                    .foregroundColor(.tmGold).frame(maxWidth: .infinity).padding(.vertical, 10)
+                    .background(Color.tmGold.opacity(0.06))
+                }
+            }
+        }
+        .background(RoundedRectangle(cornerRadius: 14)
+            .fill(isRest ? Color.blue.opacity(0.05) : Color.white.opacity(0.05))
+            .overlay(RoundedRectangle(cornerRadius: 14)
+                .stroke(isRest ? Color.blue.opacity(0.2) : Color.white.opacity(0.08), lineWidth: 1)))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+    }
+}
+
+
+// MARK: - ShareSheet
+
+struct ShareSheet: UIViewControllerRepresentable {
+    let items: [Any]
+    func makeUIViewController(context: Context) -> UIActivityViewController {
+        UIActivityViewController(activityItems: items, applicationActivities: nil)
+    }
+    func updateUIViewController(_ vc: UIActivityViewController, context: Context) {}
+}
+
+
+// MARK: - Weekly Program Card
+
+struct WeeklyProgramCard: View {
+    let days:            [WorkoutRow]
+    let isExpanded:      Bool
+    let onTap:           () -> Void
+    let onSelectWorkout: (WorkoutRow) -> Void
+
+    private var programTitle: String {
+        if let mg = days.first(where: { !($0.isRestDay ?? false) })?.muscleGroup {
+            return "\(days.count)-Day Program"
+        }
+        return "\(days.count)-Day Program"
+    }
+
+    private var workoutDays: Int { days.filter { !($0.isRestDay ?? false) }.count }
+    private var restDays:    Int { days.filter { $0.isRestDay ?? false }.count }
+
+    private var dateLabel: String {
+        guard let date = days.first?.createdAt else { return "" }
+        let f = DateFormatter(); f.dateStyle = .medium
+        return f.string(from: date)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header — tap to expand/collapse
+            Button(action: onTap) {
+                HStack(spacing: 14) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 10).fill(Color.tmGold.opacity(0.15)).frame(width: 44, height: 44)
+                        Image(systemName: "dumbbell.fill").font(.system(size: 18)).foregroundColor(.tmGold)
+                    }
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(programTitle).font(.system(size: 15, weight: .bold)).foregroundColor(.white)
+                        HStack(spacing: 8) {
+                            Text("\(workoutDays) workouts").font(.caption).foregroundColor(.tmGold)
+                            if restDays > 0 {
+                                Text("·").foregroundColor(.white.opacity(0.3))
+                                Text("\(restDays) rest days").font(.caption).foregroundColor(.blue.opacity(0.8))
+                            }
+                            Text("·").foregroundColor(.white.opacity(0.3))
+                            Text(dateLabel).font(.caption).foregroundColor(.white.opacity(0.4))
+                        }
+                    }
+                    Spacer()
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 12, weight: .semibold)).foregroundColor(.white.opacity(0.4))
+                }
+                .padding(14)
+            }
+            .buttonStyle(.plain)
+
+            // Expanded day list
+            if isExpanded {
+                Divider().background(Color.white.opacity(0.06))
+                VStack(spacing: 0) {
+                    ForEach(Array(days.enumerated()), id: \.element.id) { i, workout in
+                        Button(action: { onSelectWorkout(workout) }) {
+                            HStack(spacing: 12) {
+                                // Day badge
+                                Text("\(workout.dayNumber ?? i+1)")
+                                    .font(.system(size: 11, weight: .black)).foregroundColor(.black)
+                                    .frame(width: 26, height: 26)
+                                    .background(Circle().fill(workout.isRestDay ?? false ? Color.blue : Color.tmGold))
+
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(workout.title).font(.system(size: 13, weight: .semibold)).foregroundColor(.white)
+                                    if !(workout.isRestDay ?? false) {
+                                        HStack(spacing: 6) {
+                                            if let mg = workout.muscleGroup, !mg.isEmpty {
+                                                Text(mg).font(.caption).foregroundColor(.tmGold)
+                                                Text("·").foregroundColor(.white.opacity(0.3))
+                                            }
+                                            Text("\(workout.exercises.count) exercises").font(.caption).foregroundColor(.white.opacity(0.4))
+                                            Text("·").foregroundColor(.white.opacity(0.3))
+                                            Text("\(workout.estimatedMins) min").font(.caption).foregroundColor(.white.opacity(0.4))
+                                        }
+                                    } else {
+                                        Text("Rest & Recovery").font(.caption).foregroundColor(.blue.opacity(0.7))
+                                    }
+                                }
+                                Spacer()
+                                if !(workout.isRestDay ?? false) {
+                                    Image(systemName: "chevron.right").font(.caption2).foregroundColor(.white.opacity(0.3))
+                                }
+                            }
+                            .padding(.horizontal, 14).padding(.vertical, 10)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(workout.isRestDay ?? false)
+
+                        if i < days.count - 1 {
+                            Divider().background(Color.white.opacity(0.04)).padding(.leading, 52)
+                        }
+                    }
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .background(RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.05))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.white.opacity(0.08), lineWidth: 1)))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .animation(.easeInOut(duration: 0.2), value: isExpanded)
     }
 }
 
@@ -750,6 +1172,10 @@ struct SBWorkoutRow: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(workout.title).font(.system(size: 13, weight: .semibold)).foregroundColor(.white)
                     HStack(spacing: 6) {
+                        if let mg = workout.muscleGroup, !mg.isEmpty {
+                            Text(mg).font(.caption).fontWeight(.bold).foregroundColor(.tmGold)
+                            Text("·").foregroundColor(.white.opacity(0.3))
+                        }
                         Text("\(workout.estimatedMins) min"); Text("·")
                         Text(workout.difficulty.capitalized); Text("·")
                         Text("\(workout.exercises.count) exercises")
@@ -764,17 +1190,7 @@ struct SBWorkoutRow: View {
                         workout.status == "assigned"  ? Color.tmGold : Color.orange))
             }.padding(12)
 
-            if !isTrainerView && workout.status == "assigned" {
-                Button(action: markComplete) {
-                    HStack(spacing: 6) {
-                        if isCompleting { ProgressView().tint(.black).scaleEffect(0.8) }
-                        else { Image(systemName: "checkmark.circle.fill"); Text("Mark Complete").font(.system(size: 13, weight: .bold)) }
-                    }
-                    .foregroundColor(.black).frame(maxWidth: .infinity).frame(height: 38)
-                    .background(RoundedRectangle(cornerRadius: 10).fill(Color.tmGold))
-                }
-                .padding(.horizontal, 12).padding(.bottom, 12).disabled(isCompleting)
-            }
+
         }
         .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.04)))
     }
@@ -788,6 +1204,461 @@ struct SBWorkoutRow: View {
     private func markComplete() {
         isCompleting = true
         Task { try? await store.markComplete(workout.id); await MainActor.run { isCompleting = false } }
+    }
+}
+
+
+
+
+// MARK: - Meal Sort Helper
+
+func sortedMeals(_ meals: [MealItem]) -> [MealItem] {
+    let order = ["breakfast": 0, "pre-workout": 1, "lunch": 2, "snack": 3,
+                 "post-workout": 4, "dinner": 5]
+    return meals.sorted {
+        (order[$0.mealType.lowercased()] ?? 6) < (order[$1.mealType.lowercased()] ?? 6)
+    }
+}
+
+// MARK: - SBMealPlanClientCard
+
+struct SBMealPlanClientCard: View {
+    let plan: MealPlanRow
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10).fill(Color.tmGold.opacity(0.15)).frame(width: 44, height: 44)
+                    Image(systemName: "fork.knife").font(.system(size: 18)).foregroundColor(.tmGold)
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(plan.title).font(.system(size: 15, weight: .bold)).foregroundColor(.white)
+                    Text("\(plan.meals.count) meals · \(plan.dailyCalories) kcal/day")
+                        .font(.caption).foregroundColor(.white.opacity(0.45))
+                }
+                Spacer()
+                if plan.isActive {
+                    Text("ACTIVE").font(.system(size: 9, weight: .bold)).foregroundColor(.black)
+                        .padding(.horizontal, 8).padding(.vertical, 3).background(Capsule().fill(Color.green))
+                }
+            }
+            .padding(14)
+            Divider().background(Color.white.opacity(0.06))
+            HStack(spacing: 0) {
+                macroCell("\(plan.dailyCalories)", "kcal", .tmGold)
+                Divider().background(Color.white.opacity(0.08)).frame(height: 28)
+                macroCell(String(format: "%.0fg", plan.proteinG), "protein", .red)
+                Divider().background(Color.white.opacity(0.08)).frame(height: 28)
+                macroCell(String(format: "%.0fg", plan.carbsG), "carbs", .blue)
+                Divider().background(Color.white.opacity(0.08)).frame(height: 28)
+                macroCell(String(format: "%.0fg", plan.fatG), "fats", .orange)
+            }
+            .padding(.vertical, 8)
+            if !plan.meals.isEmpty {
+                Divider().background(Color.white.opacity(0.06))
+                VStack(spacing: 0) {
+                    let preview: [MealItem] = Array(sortedMeals(plan.meals).prefix(3))
+                    ForEach(Array(preview.enumerated()), id: \.element.id) { i, meal in
+                        HStack(spacing: 10) {
+                            Text(meal.mealType).font(.caption).fontWeight(.semibold)
+                                .foregroundColor(.tmGold).frame(width: 70, alignment: .leading)
+                            Text(meal.name).font(.caption).foregroundColor(.white.opacity(0.8))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            Text("\(meal.calories) cal").font(.caption).foregroundColor(.white.opacity(0.5))
+                        }
+                        .padding(.horizontal, 14).padding(.vertical, 8)
+                        if i < preview.count - 1 {
+                            Divider().background(Color.white.opacity(0.04)).padding(.leading, 14)
+                        }
+                    }
+                    if plan.meals.count > 3 {
+                        Text("Tap to see all \(plan.meals.count) meals")
+                            .font(.caption).foregroundColor(.tmGold.opacity(0.7))
+                            .padding(.horizontal, 14).padding(.bottom, 8)
+                    }
+                }
+            }
+        }
+        .background(RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.05))
+            .overlay(RoundedRectangle(cornerRadius: 14)
+                .stroke(plan.isActive ? Color.green.opacity(0.3) : Color.white.opacity(0.07), lineWidth: 1)))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+    }
+
+    private func macroCell(_ value: String, _ label: String, _ color: Color) -> some View {
+        VStack(spacing: 3) {
+            Text(value).font(.system(size: 13, weight: .black)).foregroundColor(color)
+            Text(label).font(.system(size: 9)).foregroundColor(.white.opacity(0.4))
+        }.frame(maxWidth: .infinity)
+    }
+}
+
+// MARK: - MealPlanDetailSheet
+
+struct MealPlanDetailSheet: View {
+    let plan: MealPlanRow
+    @Environment(\.dismiss) var dismiss
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            VStack(spacing: 0) {
+                // Header
+                HStack {
+                    Button(action: { dismiss() }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.left").fontWeight(.semibold)
+                            Text("Back")
+                        }.foregroundColor(.tmGold)
+                    }
+                    Spacer()
+                    if plan.isActive {
+                        Text("ACTIVE").font(.system(size: 10, weight: .bold)).foregroundColor(.black)
+                            .padding(.horizontal, 10).padding(.vertical, 4)
+                            .background(Capsule().fill(Color.green))
+                    }
+                    Button(action: { shareMealPlan() }) {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.system(size: 16, weight: .semibold)).foregroundColor(.tmGold)
+                    }
+                }
+                .padding(.horizontal, 20).padding(.vertical, 16)
+
+                // Plan title
+                VStack(spacing: 4) {
+                    Text(plan.title).font(.title2).fontWeight(.bold).foregroundColor(.white)
+                    if !plan.description.isEmpty {
+                        Text(plan.description).font(.caption).foregroundColor(.white.opacity(0.5))
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 20).padding(.bottom, 16)
+
+                // Daily macro strip
+                HStack(spacing: 0) {
+                    macroCell("\(plan.dailyCalories)", "Calories", .tmGold)
+                    macroCell(String(format: "%.0fg", plan.proteinG), "Protein", .red)
+                    macroCell(String(format: "%.0fg", plan.carbsG),   "Carbs",   .blue)
+                    macroCell(String(format: "%.0fg", plan.fatG),     "Fat",     .orange)
+                }
+                .padding(.vertical, 14)
+                .background(Color.white.opacity(0.05))
+
+                Divider().background(Color.white.opacity(0.08))
+
+                // Meal list
+                ScrollView {
+                    VStack(spacing: 0) {
+                        ForEach(Array(sortedMeals(plan.meals).enumerated()), id: \.element.id) { i, meal in
+                            MealDetailRow(meal: meal, index: i + 1)
+                            if i < plan.meals.count - 1 {
+                                Divider().background(Color.white.opacity(0.06)).padding(.leading, 60)
+                            }
+                        }
+                    }
+                    .background(Color.white.opacity(0.03))
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                    .padding(16)
+                }
+            }
+        }
+        .navigationBarHidden(true)
+    }
+
+    private func macroCell(_ value: String, _ label: String, _ color: Color) -> some View {
+        VStack(spacing: 3) {
+            Text(value).font(.system(size: 17, weight: .black)).foregroundColor(color)
+            Text(label).font(.system(size: 10)).foregroundColor(.white.opacity(0.45))
+        }.frame(maxWidth: .infinity)
+    }
+
+    private func shareMealPlan() {
+        let pdf = generateMealPlanPDF()
+        let av = UIActivityViewController(activityItems: [pdf], applicationActivities: nil)
+        if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let root = scene.windows.first?.rootViewController {
+            var presented = root
+            while let next = presented.presentedViewController { presented = next }
+            presented.present(av, animated: true)
+        }
+    }
+
+
+    private func generateMealPlanPDF() -> URL {
+        let pageW: CGFloat = 612; let pageH: CGFloat = 792
+        let margin: CGFloat = 48
+        var y: CGFloat = margin
+
+        let renderer = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: pageW, height: pageH))
+        let data = renderer.pdfData { ctx in
+            ctx.beginPage()
+
+            // Title
+            let titleAttr: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 24, weight: .black), .foregroundColor: UIColor(red: 0.82, green: 0.69, blue: 0.27, alpha: 1)]
+            plan.title.draw(at: CGPoint(x: margin, y: y), withAttributes: titleAttr)
+            y += 36
+
+            if plan.isActive {
+                let activeAttr: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 11, weight: .bold), .foregroundColor: UIColor.systemGreen]
+                "ACTIVE PLAN".draw(at: CGPoint(x: margin, y: y), withAttributes: activeAttr)
+                y += 20
+            }
+
+            // Divider
+            UIColor.lightGray.setStroke()
+            let line = UIBezierPath(); line.move(to: CGPoint(x: margin, y: y + 4)); line.addLine(to: CGPoint(x: pageW - margin, y: y + 4)); line.lineWidth = 0.5; line.stroke()
+            y += 16
+
+            // Daily targets
+            let sectionAttr: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 11, weight: .bold), .foregroundColor: UIColor.darkGray]
+            let bodyAttr:    [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 12, weight: .regular), .foregroundColor: UIColor.black]
+            let boldAttr:    [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 12, weight: .semibold), .foregroundColor: UIColor.black]
+
+            "DAILY TARGETS".draw(at: CGPoint(x: margin, y: y), withAttributes: sectionAttr)
+            y += 18
+
+            let macros = [
+                ("Calories", "\(plan.dailyCalories) kcal"),
+                ("Protein",  String(format: "%.0fg", plan.proteinG)),
+                ("Carbs",    String(format: "%.0fg", plan.carbsG)),
+                ("Fat",      String(format: "%.0fg", plan.fatG))
+            ]
+            let colW = (pageW - margin * 2) / 4
+            for (i, (label, value)) in macros.enumerated() {
+                let x = margin + CGFloat(i) * colW
+                label.draw(at: CGPoint(x: x, y: y), withAttributes: sectionAttr)
+                value.draw(at: CGPoint(x: x, y: y + 16), withAttributes: boldAttr)
+            }
+            y += 48
+
+            // Meals
+            let orderedMeals = sortedMeals(plan.meals)
+            for (i, meal) in orderedMeals.enumerated() {
+                // Check page space
+                if y > pageH - 120 { ctx.beginPage(); y = margin }
+
+                // Meal header
+                let mealHeader = "\(i + 1).  \(meal.mealType.uppercased()) — \(meal.name)"
+                mealHeader.draw(at: CGPoint(x: margin, y: y), withAttributes: boldAttr)
+                y += 18
+
+                // Macros
+                let macroLine = "\(meal.calories) cal  ·  P: \(String(format: "%.0f", meal.protein))g  ·  C: \(String(format: "%.0f", meal.carbs))g  ·  F: \(String(format: "%.0f", meal.fat))g"
+                macroLine.draw(at: CGPoint(x: margin + 16, y: y), withAttributes: bodyAttr)
+                y += 18
+
+                // Foods
+                if !meal.notes.isEmpty {
+                    let foods = meal.notes.components(separatedBy: ", ")
+                    for food in foods {
+                        if y > pageH - 60 { ctx.beginPage(); y = margin }
+                        let formatted = "  •  \(formatFoodText(food))"
+                        formatted.draw(at: CGPoint(x: margin + 16, y: y), withAttributes: bodyAttr)
+                        y += 16
+                    }
+                }
+                y += 12
+            }
+        }
+
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(plan.title.replacingOccurrences(of: " ", with: "_"))_MealPlan.pdf")
+        try? data.write(to: url)
+        return url
+    }
+
+    private func formatFoodText(_ raw: String) -> String {
+        let parts = raw.components(separatedBy: " ")
+        guard parts.count >= 3,
+              let multiplierStr = parts.first, multiplierStr.hasSuffix("x"),
+              let multiplier = Double(multiplierStr.dropLast()) else { return raw }
+        let rest = parts.dropFirst().joined(separator: " ")
+        let restParts = rest.components(separatedBy: " ")
+        if let baseAmount = Double(restParts[0]), restParts.count >= 2 {
+            let actual = baseAmount * multiplier
+            let unitAndName = restParts.dropFirst().joined(separator: " ")
+            let formatted = actual == floor(actual) ? String(Int(actual)) : String(format: "%.1f", actual)
+            return "\(formatted) \(unitAndName)"
+        }
+        return rest
+    }
+}
+
+// MARK: - MealDetailRow
+
+struct MealDetailRow: View {
+    let meal:  MealItem
+    let index: Int
+    @State private var expanded = false
+
+    var body: some View {
+        Button(action: { withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() } }) {
+            VStack(spacing: 0) {
+                // Main row
+                HStack(spacing: 14) {
+                    // Meal number circle
+                    Text("\(index)")
+                        .font(.system(size: 12, weight: .black)).foregroundColor(.black)
+                        .frame(width: 28, height: 28)
+                        .background(Circle().fill(Color.tmGold))
+
+                    // Meal info
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(meal.name)
+                            .font(.system(size: 15, weight: .semibold)).foregroundColor(.white)
+                        HStack(spacing: 6) {
+                            Image(systemName: mealIcon(meal.mealType)).font(.system(size: 10)).foregroundColor(.tmGold)
+                            Text(meal.mealType.capitalized).font(.caption).foregroundColor(.tmGold)
+                        }
+                    }
+
+                    Spacer()
+
+                    // Calories + chevron
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("\(meal.calories)").font(.system(size: 16, weight: .black)).foregroundColor(.white)
+                        Text("cal").font(.system(size: 10)).foregroundColor(.white.opacity(0.4))
+                    }
+                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.3))
+                }
+                .padding(.horizontal, 16).padding(.vertical, 14)
+
+                // Expanded detail
+                if expanded {
+                    VStack(alignment: .leading, spacing: 10) {
+                        // Macros row
+                        HStack(spacing: 0) {
+                            macroChip(String(format: "%.0f", meal.protein), "Protein", .red)
+                            macroChip(String(format: "%.0f", meal.carbs),   "Carbs",   .blue)
+                            macroChip(String(format: "%.0f", meal.fat),     "Fat",     .orange)
+                        }
+                        .padding(.vertical, 10)
+                        .background(Color.white.opacity(0.04))
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                        // Food items listed line by line
+                        if !meal.notes.isEmpty {
+                            VStack(alignment: .leading, spacing: 6) {
+                                ForEach(meal.notes.components(separatedBy: ", "), id: \.self) { item in
+                                    HStack(spacing: 8) {
+                                        Circle().fill(Color.tmGold).frame(width: 5, height: 5)
+                                        Text(formatFoodItem(item.trimmingCharacters(in: .whitespaces)))
+                                            .font(.caption).foregroundColor(.white.opacity(0.7))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 16).padding(.bottom, 14)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func macroChip(_ value: String, _ label: String, _ color: Color) -> some View {
+        VStack(spacing: 2) {
+            Text("\(value)g").font(.system(size: 14, weight: .black)).foregroundColor(color)
+            Text(label).font(.system(size: 10)).foregroundColor(.white.opacity(0.4))
+        }.frame(maxWidth: .infinity)
+    }
+
+    /// Converts "1.5x 1 cup Oatmeal (cooked)" → "1.5 cups Oatmeal (cooked)"
+    /// Converts "0.5x 2 eggs Whole Eggs" → "1 egg Whole Eggs"
+    private func formatFoodItem(_ raw: String) -> String {
+        // Expected format: "{servings}x {unit} {name}"
+        // e.g. "2x 4 oz Chicken Breast" or "0.5x 1 cup Oatmeal (cooked)"
+        let parts = raw.components(separatedBy: " ")
+        guard parts.count >= 3,
+              let multiplierStr = parts.first,
+              multiplierStr.hasSuffix("x"),
+              let multiplier = Double(multiplierStr.dropLast()) else {
+            return raw
+        }
+
+        // Remove the "{n}x" prefix
+        let rest = parts.dropFirst().joined(separator: " ")
+
+        // Try to parse a leading number from rest (the "base" unit amount)
+        let restParts = rest.components(separatedBy: " ")
+        if let baseAmount = Double(restParts[0]), restParts.count >= 2 {
+            let actual = baseAmount * multiplier
+            let unitAndName = restParts.dropFirst().joined(separator: " ")
+            let formatted = actual == floor(actual)
+                ? String(Int(actual))
+                : String(format: "%.1f", actual)
+            return "\(formatted) \(unitAndName)"
+        }
+
+        return rest
+    }
+
+    private func mealIcon(_ type: String) -> String {
+        switch type.lowercased() {
+        case "breakfast": return "sunrise.fill"
+        case "lunch":     return "sun.max.fill"
+        case "dinner":    return "moon.fill"
+        case "snack":     return "leaf.fill"
+        case "pre-workout": return "bolt.fill"
+        case "post-workout": return "flame.fill"
+        default:          return "fork.knife"
+        }
+    }
+}
+
+
+// MARK: - ClientNutritionSection
+
+struct ClientNutritionSection: View {
+    let clientId:   String
+    let clientName: String
+    let trainerId:  String
+    @Binding var selectedPlan: MealPlanRow?
+
+    @ObservedObject private var store = SBMealPlanStore.shared
+    @State private var isLoading = false
+
+    private var plans: [MealPlanRow] {
+        store.mealPlans.filter { $0.clientId.uuidString.uppercased() == clientId.uppercased() }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Nutrition").font(.title2).fontWeight(.bold).foregroundColor(.white)
+
+            if isLoading {
+                HStack { Spacer(); ProgressView().tint(.tmGold); Spacer() }.padding(.vertical, 20)
+            } else if plans.isEmpty {
+                VStack(spacing: 12) {
+                    Image(systemName: "fork.knife").font(.system(size: 40))
+                        .foregroundColor(.tmGold.opacity(0.2))
+                    Text("No meal plan assigned yet")
+                        .font(.subheadline).foregroundColor(.white.opacity(0.4))
+                    Text("Your trainer will assign a meal plan here.")
+                        .font(.caption).foregroundColor(.white.opacity(0.3)).multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity).padding(.vertical, 24)
+                .background(RoundedRectangle(cornerRadius: 16).fill(Color.white.opacity(0.03)))
+            } else {
+                ForEach(plans) { plan in
+                    Button(action: { selectedPlan = plan }) {
+                        SBMealPlanClientCard(plan: plan)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .onAppear {
+            guard let uuid = UUID(uuidString: clientId) else { return }
+            isLoading = true
+            Task {
+                try? await store.fetchForClient(uuid)
+                await MainActor.run { isLoading = false }
+            }
+        }
     }
 }
 

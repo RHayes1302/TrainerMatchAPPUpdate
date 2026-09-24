@@ -202,10 +202,12 @@ class VideoMessageViewModel: ObservableObject {
             }
         }
         do {
+            // Normalize to uppercase to match UUID storage format
+            let normalizedClientId = clientId.uppercased()
             let rows: [Row] = try await supabase
                 .from("video_messages")
                 .select()
-                .eq("client_id", value: clientId)
+                .eq("client_id", value: normalizedClientId)
                 .eq("upload_status", value: "uploaded")
                 .order("date_created", ascending: false)
                 .execute()
@@ -225,10 +227,30 @@ class VideoMessageViewModel: ObservableObject {
                 return msg
             }
 
-            let existingIds = Set(videoMessages.map { $0.id })
-            let newOnes = fetched.filter { !existingIds.contains($0.id) }
-            videoMessages.insert(contentsOf: newOnes, at: 0)
-            videoMessages.sort { $0.dateCreated > $1.dateCreated }
+            // Supabase is source of truth — replace entirely to avoid duplicates
+            await MainActor.run {
+                videoMessages = fetched.sorted { $0.dateCreated > $1.dateCreated }
+            }
+
+            // Auto-delete messages viewed more than 48 hours ago
+            let cutoff = Date().addingTimeInterval(-48 * 3600)
+            let toDelete = fetched.filter { msg in
+                guard msg.isViewed, let viewedDate = msg.viewedDate else { return false }
+                return viewedDate < cutoff
+            }
+            for msg in toDelete {
+                try? await supabase
+                    .from("video_messages")
+                    .delete()
+                    .eq("id", value: msg.id.uppercased())
+                    .execute()
+            }
+            if !toDelete.isEmpty {
+                await MainActor.run {
+                    let deleteIds = Set(toDelete.map { $0.id })
+                    videoMessages.removeAll { deleteIds.contains($0.id) }
+                }
+            }
 
         } catch {
             print("VideoMessageViewModel fetchForClient error: \(error)")
@@ -282,10 +304,12 @@ class VideoMessageViewModel: ObservableObject {
     // MARK: - Query helpers
 
     func getMessages(for clientId: String) -> [VideoMessage] {
-        videoMessages.filter { $0.clientId == clientId }.sorted { $0.dateCreated > $1.dateCreated }
+        let normalized = clientId.uppercased()
+        return videoMessages.filter { $0.clientId.uppercased() == normalized }.sorted { $0.dateCreated > $1.dateCreated }
     }
     func getUnviewedCount(for clientId: String) -> Int {
-        videoMessages.filter { $0.clientId == clientId && !$0.isViewed }.count
+        let normalized = clientId.uppercased()
+        return videoMessages.filter { $0.clientId.uppercased() == normalized && !$0.isViewed }.count
     }
     func getRecentMessages(for clientId: String, limit: Int = 5) -> [VideoMessage] {
         Array(getMessages(for: clientId).prefix(limit))

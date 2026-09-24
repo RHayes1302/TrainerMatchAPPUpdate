@@ -31,6 +31,7 @@ struct ClientSignupView: View {
     @State private var profileImage:   Image?
     @State private var profileUIImage: UIImage?
     @State private var selectedGoals:  Set<FitnessGoal> = []
+    @State private var currentWeight   = ""
     @State private var targetWeight    = ""
     @State private var fitnessLevel:   FitnessLevel = .beginner
     @State private var medicalConditions = ""
@@ -190,7 +191,7 @@ struct ClientSignupView: View {
             )
         case 1:
             ClientGoalsSection(
-                selectedGoals: $selectedGoals, targetWeight: $targetWeight,
+                selectedGoals: $selectedGoals, currentWeight: $currentWeight, targetWeight: $targetWeight,
                 fitnessLevel: $fitnessLevel, preferredServiceType: $preferredServiceType
             )
         case 2:
@@ -348,6 +349,7 @@ struct ClientBasicInfoSection: View {
 // MARK: - Client Goals Section
 struct ClientGoalsSection: View {
     @Binding var selectedGoals:          Set<FitnessGoal>
+    @Binding var currentWeight:          String
     @Binding var targetWeight:           String
     @Binding var fitnessLevel:           FitnessLevel
     @Binding var preferredServiceType:   ServiceType
@@ -378,6 +380,7 @@ struct ClientGoalsSection: View {
                 }
                 .frame(maxHeight: 400)
             }
+            FormField(label: "Current Weight (Optional)", text: $currentWeight, placeholder: "180 lbs")
             FormField(label: "Target Weight (Optional)", text: $targetWeight, placeholder: "150 lbs")
             Divider().background(Color.white.opacity(0.2)).padding(.vertical, 8)
             VStack(alignment: .leading, spacing: 8) {

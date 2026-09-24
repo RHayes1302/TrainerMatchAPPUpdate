@@ -52,7 +52,7 @@ struct FAQsView: View {
                         TrainerMatchLogo(size: .large)
                             .shadow(color: .tmGold.opacity(0.3), radius: 20, x: 0, y: 10)
                         
-                        Text("TrainerMatch")
+                        Text("Nearby Trainers")
                             .font(.system(size: 32, weight: .bold))
                             .italic()
                             .foregroundColor(.white)

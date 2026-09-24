@@ -4,7 +4,6 @@
 //
 //  Created by Ramone Hayes on 2/12/26.
 //
-//
 
 import Foundation
 import Combine
@@ -49,7 +48,6 @@ class AuthManager: ObservableObject {
            let role = UserRole(rawValue: roleString) {
             currentUserRole = role
             
-            // Load the user's profile
             if role == .trainer {
                 loadCurrentTrainerProfile()
             } else {
@@ -95,9 +93,8 @@ class AuthManager: ObservableObject {
         serviceTypes: Set<ServiceType>
     ) -> Bool {
         
-        // Check if email already exists
         if getTrainerByEmail(email) != nil {
-            return false // Email already registered
+            return false
         }
         
         let userId = UUID().uuidString
@@ -108,7 +105,7 @@ class AuthManager: ObservableObject {
             firstName: firstName,
             lastName: lastName,
             email: email,
-            password: password, // In production, HASH this!
+            password: password,
             city: city,
             state: state,
             gender: "",
@@ -124,10 +121,7 @@ class AuthManager: ObservableObject {
         )
         
         saveTrainer(trainer)
-        
-        // Auto-login after registration
-        loginTrainer(email: email, password: password)
-        
+        _ = loginTrainer(email: email, password: password)
         return true
     }
     
@@ -148,9 +142,8 @@ class AuthManager: ObservableObject {
         medications: String
     ) -> Bool {
         
-        // Check if email already exists
         if getClientByEmail(email) != nil {
-            return false // Email already registered
+            return false
         }
         
         let userId = UUID().uuidString
@@ -160,7 +153,7 @@ class AuthManager: ObservableObject {
             firstName: firstName,
             lastName: lastName,
             email: email,
-            password: password, // In production, HASH this!
+            password: password,
             city: city,
             state: state,
             birthDate: birthDate,
@@ -175,15 +168,13 @@ class AuthManager: ObservableObject {
         )
         
         saveClient(client)
-        
-        // Auto-login after registration
-        loginClient(email: email, password: password)
-        
+        _ = loginClient(email: email, password: password)
         return true
     }
     
     // MARK: - Login
-    
+
+    @discardableResult
     func loginTrainer(email: String, password: String) -> Bool {
         guard let trainer = getTrainerByEmail(email),
               trainer.password == password else {
@@ -199,21 +190,8 @@ class AuthManager: ObservableObject {
         
         return true
     }
-    
-    func updateClientProfile(_ client: SavedClientProfile) {
-        saveClient(client)
-        if currentUserId == client.id {
-            currentClientProfile = client
-        }
-    }
 
-    func updateTrainerProfile(_ trainer: SavedTrainerProfile) {
-        saveTrainer(trainer)
-        if currentUserId == trainer.id {
-            currentTrainerProfile = trainer
-        }
-    }
-
+    @discardableResult
     func loginClient(email: String, password: String) -> Bool {
         guard let client = getClientByEmail(email),
               client.password == password else {
@@ -229,6 +207,20 @@ class AuthManager: ObservableObject {
         
         return true
     }
+
+    func updateClientProfile(_ client: SavedClientProfile) {
+        saveClient(client)
+        if currentUserId == client.id {
+            currentClientProfile = client
+        }
+    }
+
+    func updateTrainerProfile(_ trainer: SavedTrainerProfile) {
+        saveTrainer(trainer)
+        if currentUserId == trainer.id {
+            currentTrainerProfile = trainer
+        }
+    }
     
     // MARK: - Storage
     
@@ -239,7 +231,6 @@ class AuthManager: ObservableObject {
         } else {
             trainers.append(trainer)
         }
-        
         if let encoded = try? JSONEncoder().encode(trainers) {
             userDefaults.set(encoded, forKey: trainersKey)
         }
@@ -252,7 +243,6 @@ class AuthManager: ObservableObject {
         } else {
             clients.append(client)
         }
-        
         if let encoded = try? JSONEncoder().encode(clients) {
             userDefaults.set(encoded, forKey: clientsKey)
         }
@@ -292,7 +282,7 @@ class AuthManager: ObservableObject {
         currentClientProfile = getAllClients().first { $0.id == userId }
     }
 
-    // MARK: - Public helpers (used by AppleSignInSetupView)
+    // MARK: - Public helpers
 
     func saveTrainerPublic(_ trainer: SavedTrainerProfile) {
         saveTrainer(trainer)
@@ -390,7 +380,7 @@ struct SavedTrainerProfile: Codable, Identifiable {
     let firstName: String
     let lastName: String
     let email: String
-    let password: String // WARNING: In production, use proper password hashing!
+    let password: String
     let city: String
     let state: String
     var gender: String
@@ -414,7 +404,7 @@ struct SavedClientProfile: Codable, Identifiable {
     let firstName: String
     let lastName: String
     let email: String
-    let password: String // WARNING: In production, use proper password hashing!
+    let password: String
     let city: String
     let state: String
     let birthDate: Date

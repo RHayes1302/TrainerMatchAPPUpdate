@@ -2,23 +2,18 @@
 //  MainAppView.swift
 //  TrainerMatch
 //
-//  Created by Ramone Hayes on 2/10/26.
-//
 
 import SwiftUI
 
+// Note: This view is kept for reference but the app entry point is AppEntryView.
+// Health tracker is now accessed via HealthTrackerContentView(clientId:trainerId:clientName:)
+// from ClientProfileMySpaceView.
+
 struct MainAppView: View {
     @State private var selectedRole: UserRole = .client
-    
+
     var body: some View {
         TabView(selection: $selectedRole) {
-            // Client View - Personal Health Tracking
-            ContentView()
-                .tabItem {
-                    Label("My Health", systemImage: "heart.fill")
-                }
-                .tag(UserRole.client)
-            
             // Trainer View - Client Management
             TrainerDashboardView()
                 .tabItem {

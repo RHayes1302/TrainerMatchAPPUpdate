@@ -95,7 +95,7 @@ class SBTrainerResultsStore: ObservableObject {
         await SupabaseStorage.deleteTrainerResultPhotos(
             trainerId: result.trainerId.uuidString,
             resultId: result.id.uuidString)
-        try? await supabase.from("trainer_results")
+        _ = try? await supabase.from("trainer_results")
             .delete()
             .eq("id", value: result.id)
             .execute()
